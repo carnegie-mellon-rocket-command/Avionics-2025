@@ -30,7 +30,9 @@
 #include <Adafruit_Sensor.h>
 
 // Constants
-const int chip_select = BUILTIN_SDCARD;      // SD card chip select pin
+// const int chip_select = BUILTIN_SDCARD;      // SD card chip select pin.  NOTE: We may need to change this if we are no longer using the "Teensy 4.1"
+const int chip_select = false;               // putting this here for now; SD card will not initialize with this   -- Tate
+sensors_event_t ang_velocity_data, linear_accel_data, magnetometer_data, accelerometer_data, gravity_data; // Adafruit stuff 
 const int led_pin = 13;                      // Onboard LED pin
 const int ats_pin = 6;                       // Servo pin for ATS
 const int ats_min = 0;                       // ATS minimum position (fully retracted)
@@ -52,12 +54,20 @@ Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);    // IMU sensor
 Adafruit_BMP3XX bmp;                                // Barometric sensor
 
 // Timing and Buffer Variables
+long timer;
 long start_time, curr_time, prev_loop_time, loop_target = 10;
 float loop_time = 0;
 String buf = "";                                 // Data buffer
 
 // Servo Object
 Servo ATS;
+float ats_position = 0;
+const int ATS_min = 0;
+const int ATS_max = 78;
+
+// Other Misc. Globals
+long altitude, velocity;
+long altimeter_filtered, velocity_filtered, acceleration_filtered, prediction_filtered;
 
 // State Variables
 bool sd_active = true;
@@ -131,15 +141,19 @@ void loop() {
         read_altimeter();                          // Read altitude sensor
         read_imu();                                // Read IMU sensor
 
+/*
         filter_altimeter();                        // Apply filter to altimeter data
         filter_accel(&linear_accel_data);          // Apply filter to accelerometer data
         filter_velocity();                         // Apply filter to velocity data
         velocity_fusion();                         // Fuse velocity data
         make_prediction();                         // Make altitude prediction
+*/
+        // Kalman filter not working right now :( will add this stuff back once we get it running again    -- Tate
 
         // Construct data string for logging
         String s1 = String(timer) + ", " + String(loop_time) + ", " + String(altitude) + ", " + String(altimeter_filtered) + ", " + String(velocity) + ", " + String(velocity_filtered);
-        String s2 = String(prediction) + ", " + String(prediction_filtered) + ", " + String(acceleration) + ", " + String(acceleration_filtered);
+        String s2 = "KALMAN FILTER NOT IMPLEMENTED RN :(";
+//        String s2 = String(prediction) + ", " + String(prediction_filtered) + ", " + String(acceleration) + ", " + String(acceleration_filtered);
         String s3 = print_event(&linear_accel_data);
         String s4 = print_event(&accelerometer_data);
         String s5 = print_event(&gravity_data);
@@ -275,4 +289,10 @@ String print_event(sensors_event_t *event) {
 // Function to read data from the altimeter
 void read_altimeter() {
     altitude = bmp.readAltitude(1015.5) * meter_to_foot;
+}
+
+void set_ats_position(float val)
+{
+  float pos = (ATS_max - ATS_min) * val + ATS_min;
+  ATS.write(int(pos));
 }
