@@ -29,10 +29,11 @@
 #include <Adafruit_BNO055.h>
 #include <Adafruit_Sensor.h>
 
+const int BUILTIN_SDCARD = 0;
+
 // Constants
-// const int chip_select = BUILTIN_SDCARD;      // SD card chip select pin.  NOTE: We may need to change this if we are no longer using the "Teensy 4.1"
-const int chip_select = false;               // putting this here for now; SD card will not initialize with this   -- Tate
-sensors_event_t ang_velocity_data, linear_accel_data, magnetometer_data, accelerometer_data, gravity_data; // Adafruit stuff 
+const int chip_select = BUILTIN_SDCARD;      // SD card chip select pin.  NOTE: We may need to change this if we are no longer using the "Teensy 4.1"
+sensors_event_t ang_velocity_data, linear_accel_data, magnetometer_data, accelerometer_data, gravity_data;       // Adafruit stuff 
 const int led_pin = 13;                      // Onboard LED pin
 const int ats_pin = 6;                       // Servo pin for ATS
 const int ats_min = 0;                       // ATS minimum position (fully retracted)
