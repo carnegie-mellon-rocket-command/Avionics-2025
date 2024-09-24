@@ -97,40 +97,63 @@ const float velocity_threshold = 0.1f;
 
 // Entry point to the program
 // Initializes all sensors and devices, and briefly tests the ATS
-void setup () {
-    // Initialize serial communication
-    Serial.begin(9600);
+//Sensor Initlization; SD Card Setup; Config. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+bool initializeSDCard(int chipSelectPin) {
+  Serial.print("Initializing SD card...");
+  if (!SD.begin(chipSelectPin)) {
+    Serial.println("Card failed, or not present");
+    return false;
+  }
+  Serial.println("Card initialized.");
+  return true;
+}
 
-    if (DEBUG) {Serial.println("Setting up...");}
+bool setupBMP3XX() {
+  if (!bmp.begin_I2C()) {
+    Serial.print("BMP sensor is bad");
+    return false;
+  }
+  return true;
+}
 
-    // Initialize LED
-    pinMode(LED_pin, OUTPUT);
+bool setupBNO055() {
+  if (!bno.begin()) {
+    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+    return false;
+  }
+  return true;
+}
 
-    // Initialize SD card
-    if (initializeSDCard() != 0) {
-        LEDError();
-    }
+void configureServo(int servoPin) {
+  ATS.attach(servoPin);
+  set_ATS(1);  // Initial position
+  delay(2000);
+  set_ATS(0);  // Reset position
+  delay(2000);
+  ATS.detach();
+}
 
-    // Initialize sensors
-    // TODO (waiting on hardware team lol)
+void setup() {
+  Serial.begin(115200);
+  
+  if (!initializeSDCard(BUILTIN_SDCARD)) {
+    // Consider retry logic or a safe shutdown
+    return;
+  }
 
-    // Attach ATS servo, move the ATS through its entire range of motion and back, and detach it
-    attachATS();                             // Turn on the ATS
-    setATSPosition(1.0f);                           // Initialize ATS position
-    delay(2000);
-    setATSPosition(0.0f);
-    delay(2000);
-    detachATS();                                    // Detach ATS after initialization to save power; re-enabled when launch detected
+  Wire.begin();
 
-    // Initialize radio transmitter
-    // TODO (🎶 waiting on haaaaardware teaaaam 🎶)
+  if (!setupBMP3XX() || !setupBNO055()) {
+    // Handle sensor initialization failure
+    while (1);
+  }
 
-    // Log start time
-    start_time = millis();
+  configureServo(ATS_pin);
 
-    if (DEBUG) {Serial.println("Setup complete!");}
-    // Blink the LED a few times to show that setup was successful
-    LEDSuccess();
+  pinMode(LED, OUTPUT);
+  start_time = millis();
+  prev_loop = start_time;
+  WriteData("***********************************************************************************");
 }
 
 
