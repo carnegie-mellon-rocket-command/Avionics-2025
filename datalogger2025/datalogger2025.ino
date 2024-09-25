@@ -41,6 +41,10 @@ const float alt_target = 5000.0f;
 #include <Servo.h>
 #include <SD.h>
 
+// 2024 sensor libraries
+#include <Adafruit_BMP3XX.h>
+#include <Adafruit_BNO055.h>
+#include <Adafruit_Sensor.h>
 
 
 // PIN DEFINITIONS
@@ -66,6 +70,9 @@ bool sd_active = false;
 
 // SENSOR OBJECTS AND PARAMETERS
 
+// 2024 sensors
+Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
+Adafruit_BMP3XX bmp;
 
 
 // MEASUREMENT CONSTANTS AND VARIABLES
@@ -94,20 +101,22 @@ const float velocity_threshold = 0.1f;
 
 
 
-
-// Entry point to the program
-// Initializes all sensors and devices, and briefly tests the ATS
 //Sensor Initlization; SD Card Setup; Config. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-bool initializeSDCard(int chipSelectPin) {
-  Serial.print("Initializing SD card...");
-  if (!SD.begin(chipSelectPin)) {
-    Serial.println("Card failed, or not present");
-    return false;
-  }
-  Serial.println("Card initialized.");
-  return true;
-}
 
+// We have two of these functions now hooray (?)
+// bool initializeSDCard() {
+//   Serial.print("Initializing SD card...");
+//   if (!SD.begin(chip_select)) {
+//     // TODO: maybe add some logic to retry initialization if it fails the first time
+//     Serial.println("Card failed, or not present");
+//     return false;
+//   }
+//   Serial.println("Card initialized.");
+//   return true;
+// }
+
+
+// Sensors from 2024
 bool setupBMP3XX() {
   if (!bmp.begin_I2C()) {
     Serial.print("BMP sensor is bad");
@@ -124,36 +133,43 @@ bool setupBNO055() {
   return true;
 }
 
-void configureServo(int servoPin) {
-  ATS.attach(servoPin);
-  set_ATS(1);  // Initial position
-  delay(2000);
-  set_ATS(0);  // Reset position
-  delay(2000);
-  ATS.detach();
+// Test the ATS: fully extend and retract it, then detach the servo to save power
+void configureServo() {
+    attachATS();
+    setATSPosition(1.0f);  // Initial position
+    delay(2000);
+    setATSPosition(0.0f);  // Reset position
+    delay(2000);
+    detachATS();
 }
 
+
+// Entry point to the program
+// Initializes all sensors and devices, and briefly tests the ATS
 void setup() {
-  Serial.begin(115200);
-  
-  if (!initializeSDCard(BUILTIN_SDCARD)) {
-    // Consider retry logic or a safe shutdown
-    return;
-  }
+    Serial.begin(115200);
 
-  Wire.begin();
+    if (!initializeSDCard()) {
+        // Consider retry logic or a safe shutdown
+        // TODO: We need some visual indicator that the SD card failed to initialize (perhaps via the nice function that was already written)
+        return;
+    }
 
-  if (!setupBMP3XX() || !setupBNO055()) {
-    // Handle sensor initialization failure
-    while (1);
-  }
+    Wire.begin();
 
-  configureServo(ATS_pin);
+    // Initialize sensors
+    // These are the 2024 sensors; we need to update this for 2025
+    if (!setupBMP3XX() || !setupBNO055()) {
+        // Handle sensor initialization failure
+        while (1);
+    }
 
-  pinMode(LED, OUTPUT);
-  start_time = millis();
-  prev_loop = start_time;
-  WriteData("***********************************************************************************");
+    // Test the ATS
+    configureServo();
+
+    pinMode(LED_pin, OUTPUT);
+    start_time = millis();
+    writeData("***********************************************************************************");
 }
 
 
@@ -224,7 +240,7 @@ void run_timer() {
 
 // Initialize the SD card (returns 0 if successful, -1 if failed)
 // Right now, tries to connect 10 times before going into an error state; could change so it keeps trying indefinitely
-int initializeSDCard() {
+bool initializeSDCard() {
     if (!SIMULATE) {
 
         if (DEBUG) {Serial.print("Initializing SD card...");}
@@ -257,10 +273,10 @@ int initializeSDCard() {
 }
 
 
-// Log data to the SD card in the file "datalog.csv"
+// Log data to the SD card in the file "datalog.txt"
 void writeData(String text) {
     if (sd_active) {
-        File data_file = SD.open("datalog.csv", FILE_WRITE);
+        File data_file = SD.open("datalog.txt", FILE_WRITE);
         if (data_file) {
             data_file.println(text);
             data_file.close();
@@ -268,7 +284,7 @@ void writeData(String text) {
             // Could leave this out so the program tries to keep logging data even if it fails once
             // sd_active = false;
 
-            Serial.println("Error opening datalog.csv");
+            Serial.println("Error opening datalog.txt");
         }
     } else {
         // If the SD card has not connected successfully
