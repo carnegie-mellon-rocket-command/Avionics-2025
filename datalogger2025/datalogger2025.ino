@@ -77,7 +77,6 @@ bool sd_active = false;
 
 // SENSOR OBJECTS AND PARAMETERS
 
-// 2024 sensors
 Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
 Adafruit_BMP3XX bmp;
 
