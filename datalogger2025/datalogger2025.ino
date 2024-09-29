@@ -24,16 +24,16 @@ Made by the 2025 Avionics team :D
 
 // ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
 // Don't forget to set to false before launch!!!!!
-const bool SIMULATE = false;
+#define SIMULATE false
 
 // Whether to print debugging messages to the serial monitor (even if SIMULATE is off)
 const bool DEBUG = true; 
 
 // How frequently data should be collected (in milliseconds)
-const int loop_target = 10; // 100 Hz
+const int loop_target = 10; // 10 Hz
 
 // Target altitude in feet
-const float alt_target = 5000.0f; 
+const float alt_target = 5000.0f;
 
 
 
@@ -41,15 +41,22 @@ const float alt_target = 5000.0f;
 #include <Servo.h>
 #include <SD.h>
 
+
+// Simulation mode libraries
+#if SIMULATE
+    #include <Dictionary.h>
+    Dictionary *simulatedSensorValues = new Dictionary();
+#endif
+
 // 2024 sensor libraries
-#include <Adafruit_BMP3XX.h>
-#include <Adafruit_BNO055.h>
-#include <Adafruit_Sensor.h>
+// #include <Adafruit_BMP3XX.h>
+// #include <Adafruit_BNO055.h>
+// #include <Adafruit_Sensor.h>
 
 
 // PIN DEFINITIONS
 const int ats_pin = 6;
-const int LED_pin = 13;
+const int LED_pin = LED_BUILTIN;
 
 
 // ATS SERVO PARAMETERS
@@ -71,8 +78,8 @@ bool sd_active = false;
 // SENSOR OBJECTS AND PARAMETERS
 
 // 2024 sensors
-Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
-Adafruit_BMP3XX bmp;
+// Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
+// Adafruit_BMP3XX bmp;
 
 
 // MEASUREMENT CONSTANTS AND VARIABLES
@@ -101,48 +108,6 @@ const float velocity_threshold = 0.1f;
 
 
 
-//Sensor Initlization; SD Card Setup; Config. ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-// We have two of these functions now hooray (?)
-// bool initializeSDCard() {
-//   Serial.print("Initializing SD card...");
-//   if (!SD.begin(chip_select)) {
-//     // TODO: maybe add some logic to retry initialization if it fails the first time
-//     Serial.println("Card failed, or not present");
-//     return false;
-//   }
-//   Serial.println("Card initialized.");
-//   return true;
-// }
-
-
-// Sensors from 2024
-bool setupBMP3XX() {
-  if (!bmp.begin_I2C()) {
-    Serial.print("BMP sensor is bad");
-    return false;
-  }
-  return true;
-}
-
-bool setupBNO055() {
-  if (!bno.begin()) {
-    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    return false;
-  }
-  return true;
-}
-
-// Test the ATS: fully extend and retract it, then detach the servo to save power
-void configureServo() {
-    attachATS();
-    setATSPosition(1.0f);  // Initial position
-    delay(2000);
-    setATSPosition(0.0f);  // Reset position
-    delay(2000);
-    detachATS();
-}
-
 
 // Entry point to the program
 // Initializes all sensors and devices, and briefly tests the ATS
@@ -150,26 +115,30 @@ void setup() {
     Serial.begin(115200);
 
     if (!initializeSDCard()) {
-        // Consider retry logic or a safe shutdown
-        // TODO: We need some visual indicator that the SD card failed to initialize (perhaps via the nice function that was already written)
-        return;
+        // Tries to initialize the SD card 10 times before giving up
+        // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
+        LEDError();
     }
-
-    Wire.begin();
 
     // Initialize sensors
+
     // These are the 2024 sensors; we need to update this for 2025
-    if (!setupBMP3XX() || !setupBNO055()) {
-        // Handle sensor initialization failure
-        while (1);
-    }
+    // Wire.begin();
+    // if (!setupBMP3XX() || !setupBNO055()) {
+    //     // Handle sensor initialization failure
+    //     while (1);
+    // }
 
     // Test the ATS
-    configureServo();
+    testATS();
 
     pinMode(LED_pin, OUTPUT);
     start_time = millis();
     writeData("***********************************************************************************");
+
+    #if SIMULATE
+        startSimulation();
+    #endif
 }
 
 
@@ -179,6 +148,7 @@ void loop() {
     buffer = "";
 
     for (int i = 0; i < buffer_size; i++) {
+
         // Run timer to ensure loop runs at a consistent rate
         run_timer();
 
@@ -211,6 +181,7 @@ void loop() {
             }
         }
     }
+    Serial.println("triggered");
     if (launched) {
         // Write batch of data to SD card
         writeData(buffer);
@@ -228,6 +199,7 @@ void loop() {
 // Function to handle loop timing: delays the loop to ensure it runs at a consistent rate
 void run_timer() {
     long temp_time = millis() - prev_loop_time;
+    Serial.println(temp_time);
     if (temp_time < loop_target) {
         delayMicroseconds((loop_target - temp_time) * 1000);
     }
@@ -238,43 +210,50 @@ void run_timer() {
 }
 
 
-// Initialize the SD card (returns 0 if successful, -1 if failed)
+// Initialize the SD card (returns true if successful, false if failed)
 // Right now, tries to connect 10 times before going into an error state; could change so it keeps trying indefinitely
 bool initializeSDCard() {
-    if (!SIMULATE) {
+    #if SIMULATE
+        // If simulation mode is active, don't try to connect to any hardware
+        Serial.println("(simulation) SD card initialized successfully!");
+        return true;
 
-        if (DEBUG) {Serial.print("Initializing SD card...");}
+        // Use this instead to simulate pain (pain is realistic)
+        // return false;
+    #endif
 
-        for (int i = 0; i < 10; i++) {
-            if (SD.begin(chip_select)) {
-                break;
-            }
-            if (DEBUG) {
-                Serial.println("SD card initialization failed. Trying again...");
-            }
-            delay(1000);
-            if (i == 9) {
-                Serial.println("SD card initialization failed 10 times. Aborting.");
-                return -1;
-            }
+    if (DEBUG) {Serial.print("Initializing SD card...");}
+
+    for (int i = 0; i < 10; i++) {
+        if (SD.begin(chip_select)) {
+            break;
         }
-
-        if (DEBUG) {Serial.println("SD card initialized successfully!");}
-
+        if (DEBUG) {
+            Serial.println("SD card initialization failed. Trying again...");
+        }
+        delay(1000);
+        if (i == 9) {
+            Serial.println("SD card initialization failed 10 times. Aborting.");
+            return -1;
+        }
     }
-    else {
-        Serial.println("(simulation) Initializing SD card... SD card initialized successfully!");
-    }
+
+    if (DEBUG) {Serial.println("SD card initialized successfully!");}
 
     sd_active = true;
     // Write CSV header to the file
-    writeData("time,altitude_raw,acceleration_raw,altitude_filtered,velocity_filtered,acceleration_filtered,temperature,ats_position\n");
-    return 0;
+    // writeData("time,altitude_raw,acceleration_raw,altitude_filtered,velocity_filtered,acceleration_filtered,temperature,ats_position\n");
+    return true;
 }
 
 
 // Log data to the SD card in the file "datalog.txt"
 void writeData(String text) {
+    #if SIMULATE
+        Serial.println("(simulation) Data to SD card: " + text);
+        return;
+    #endif
+
     if (sd_active) {
         File data_file = SD.open("datalog.txt", FILE_WRITE);
         if (data_file) {
@@ -296,6 +275,11 @@ void writeData(String text) {
 // Get measurements from sensors and return them as a CSV string, also updating global variables as necessary
 // Format: time, altitude_raw, acceleration_raw, altitude_filtered, velocity_filtered, acceleration_filtered, temperature, ats_position
 String getMeasurements() {
+    #if SIMULATE
+        // If simulation mode is ON, get simulated data from serial bus instead
+        return getSimulatedMeasurements();
+    #endif
+
     float altitude_raw, acceleration_raw;
 
     altitude_raw = readAltimeter();
@@ -336,6 +320,23 @@ float readIMU() {
     return imu_data;
 }
 
+// Sensors from 2024
+// bool setupBMP3XX() {
+//   if (!bmp.begin_I2C()) {
+//     Serial.print("BMP sensor is bad");
+//     return false;
+//   }
+//   return true;
+// }
+
+// bool setupBNO055() {
+//   if (!bno.begin()) {
+//     Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+//     return false;
+//   }
+//   return true;
+// }
+
 
 // Read temperature from thermometer and return it
 float readThermometer() {
@@ -363,18 +364,34 @@ bool detectLanding() {
 }
 
 
+// ATS METHODS
+
 // Turns on the ATS servo
 void attachATS() {
+    #if SIMULATE
+        return;
+    #endif
+
     ATS_servo.attach(ats_pin);
 }
 
 // Turns off the ATS servo (to save power)
 void detachATS() {
+    #if SIMULATE
+        return;
+    #endif
+
     ATS_servo.detach();
 }
 
 // Sets how far the ATS is extended based on a value between 0 and 1
+// TODO: only call this function when servo position changes
 void setATSPosition(float val) {
+    #if SIMULATE
+        // Serial.println("(simulation) ATS position:" + String(val));
+        return;
+    #endif
+
     float pos = (ats_max - ats_min) * val + ats_min;
     ATS_servo.write(int(pos));
     if (DEBUG) {Serial.println("ATS position set to " + String(pos));}
@@ -400,8 +417,19 @@ void adjustATS() {
     }
 }
 
+// Test the ATS: fully extend and retract it, then detach the servo to save power
+void testATS() {
+    attachATS();
+    setATSPosition(1.0f);  // Initial position
+    delay(2000);
+    setATSPosition(0.0f);  // Reset position
+    delay(2000);
+    detachATS();
+}
 
-// Functions for status LED
+
+
+// STATUS LED METHODS
 void LEDLogging() {
     digitalWrite(LED_pin, HIGH);
 }
@@ -429,3 +457,52 @@ void LEDError() {
 void transmitData() {
     if (DEBUG) {Serial.println("Transmitting data over radio...");}
 }
+
+
+// If in simulation mode, updated simulated sensor values from serial bus
+#if SIMULATE
+void startSimulation() {
+    simulatedSensorValues->insert("altitude_raw", "0.0");
+    simulatedSensorValues->insert("acceleration_raw", "0.0");
+    simulatedSensorValues->insert("temperature", "0.0");
+}
+
+void collectSimulatedData() {
+    String serial_buffer = Serial.readString();
+    String current_key, current_value = "";
+    for (int i = 0; i < serial_buffer.length(); i++) {
+        if (serial_buffer[i] == ':') {
+            current_key = current_value;
+            current_value = "";
+        } else if (serial_buffer[i] == ',') {
+            simulatedSensorValues->insert(current_key, current_value);
+            Serial.println("Received "+current_key+", "+current_value);
+            current_key = "";
+            current_value = "";
+        } else {
+            current_value += serial_buffer[i];
+        }
+    }
+}
+
+float dataAsFloat(String measurement_name) {
+    return simulatedSensorValues->search(measurement_name).toFloat();
+}
+
+String getSimulatedMeasurements() {
+        collectSimulatedData();
+        
+        float altitude_raw = dataAsFloat("altitude_raw");
+        float acceleration_raw = dataAsFloat("acceleration_raw");
+
+        filterData(altitude_raw, acceleration_raw);
+
+        String movement_data = String(altitude_raw) + "," + String(acceleration_raw) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
+
+        String time_data = String(millis() - start_time);
+
+        String sensor_data = String(dataAsFloat("temperature")); // IK its a little redundant but it's for consistency
+
+        return time_data + "," + movement_data + "," + sensor_data + "," + ats_position;
+}
+#endif
