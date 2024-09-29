@@ -48,10 +48,10 @@ const float alt_target = 5000.0f;
     Dictionary *simulatedSensorValues = new Dictionary();
 #endif
 
-// 2024 sensor libraries
-// #include <Adafruit_BMP3XX.h>
-// #include <Adafruit_BNO055.h>
-// #include <Adafruit_Sensor.h>
+// sensor libraries
+#include <Adafruit_BMP3XX.h>
+#include <Adafruit_BNO055.h>
+#include <Adafruit_Sensor.h>
 
 
 // PIN DEFINITIONS
@@ -78,8 +78,8 @@ bool sd_active = false;
 // SENSOR OBJECTS AND PARAMETERS
 
 // 2024 sensors
-// Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
-// Adafruit_BMP3XX bmp;
+Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
+Adafruit_BMP3XX bmp;
 
 
 // MEASUREMENT CONSTANTS AND VARIABLES
@@ -122,12 +122,11 @@ void setup() {
 
     // Initialize sensors
 
-    // These are the 2024 sensors; we need to update this for 2025
-    // Wire.begin();
-    // if (!setupBMP3XX() || !setupBNO055()) {
-    //     // Handle sensor initialization failure
-    //     while (1);
-    // }
+    Wire.begin();
+    if (!setupBMP3XX() || !setupBNO055()) {
+        // Handle sensor initialization failure
+        while (1);
+    }
 
     // Test the ATS
     testATS();
@@ -181,15 +180,12 @@ void loop() {
             }
         }
     }
-    Serial.println("triggered");
     if (launched) {
         // Write batch of data to SD card
         writeData(buffer);
     }
 
     if (landed) {
-        // Transmit data over radio
-        transmitData();
         // End the program
         return;
     }
@@ -320,22 +316,22 @@ float readIMU() {
     return imu_data;
 }
 
-// Sensors from 2024
-// bool setupBMP3XX() {
-//   if (!bmp.begin_I2C()) {
-//     Serial.print("BMP sensor is bad");
-//     return false;
-//   }
-//   return true;
-// }
+// Sensor setup functions
+bool setupBMP3XX() {
+  if (!bmp.begin_I2C()) {
+    Serial.print("BMP sensor is bad");
+    return false;
+  }
+  return true;
+}
 
-// bool setupBNO055() {
-//   if (!bno.begin()) {
-//     Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-//     return false;
-//   }
-//   return true;
-// }
+bool setupBNO055() {
+  if (!bno.begin()) {
+    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+    return false;
+  }
+  return true;
+}
 
 
 // Read temperature from thermometer and return it
@@ -356,7 +352,6 @@ bool detectLanding() {
     }
 
     if (land_time != 0 && millis() - land_time > 5000) {
-        // TODO: might want to add some more conditions here; if this messes up, we transmit data early and lose the competition :(
         return true;
     }
 
@@ -450,12 +445,6 @@ void LEDError() {
         digitalWrite(LED_pin, LOW);
         delay(1000);
     }
-}
-
-
-// Transmit data over radio
-void transmitData() {
-    if (DEBUG) {Serial.println("Transmitting data over radio...");}
 }
 
 
