@@ -44,7 +44,7 @@ const float alt_target = 5000.0f;
 // 2024 sensor libraries
 #include <Adafruit_BMP3XX.h>
 #include <Adafruit_BNO055.h>
-#include <Adafruit_Sensor.h>
+#include <Adafruit_LSM6DSOX.h>
 
 
 // PIN DEFINITIONS
