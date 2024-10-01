@@ -1,5 +1,5 @@
 /*
-Carnegie Mellon Rocketry Club: Precision INstrumented Experimental Aerial Propulsion Payload for Low-altitude Exploration ("PINEAPPLE") data logger             (see what I did there lol)
+Carnegie Schmellon Rocketry Club: Precision INstrumented Experimental Aerial Propulsion Payload for Low-altitude Exploration ("PINEAPPLE") data logger             (see what I did there lol)
 
 This sketch is designed to read data from sensors described below, smooth and filter it, and write it to an SD card. The data is written in a CSV format, with each line containing both raw and filtered measurements.
 This will also use IMU/accelerometer data to determine when the rocket has launched, and will begin logging data at that point. Additionally, when the rocket has landed, it will stop logging data.
