@@ -50,8 +50,8 @@ const float alt_target = 5000.0f;
 
 // sensor libraries
 #include <Adafruit_BMP3XX.h>
-#include <Adafruit_BNO055.h>
 #include <Adafruit_LSM6DSOX.h>
+// #include <Adafruit_BNO055.h>        // not using this one anymore!
 
 
 // PIN DEFINITIONS
@@ -77,8 +77,9 @@ bool sd_active = false;
 
 // SENSOR OBJECTS AND PARAMETERS
 
-Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
 Adafruit_BMP3XX bmp;
+Adafruit_LSM6DSOX sox;
+//Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
 
 
 // MEASUREMENT CONSTANTS AND VARIABLES
@@ -113,6 +114,11 @@ const float velocity_threshold = 0.1f;
 void setup() {
     Serial.begin(115200);
 
+    #if SIMULATE
+        startSimulation();
+    #endif
+
+    // Initialize SD card
     if (!initializeSDCard()) {
         // Tries to initialize the SD card 10 times before giving up
         // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
@@ -120,11 +126,9 @@ void setup() {
     }
 
     // Initialize sensors
-
-    Wire.begin();
-    if (!setupBMP3XX() || !setupBNO055()) {
-        // Handle sensor initialization failure
-        while (1);
+    if (!setupSensors()) {
+        // If one of the sensors doesn't connect, stop execution and blinks onboard LED to indicate an error
+        LEDError();
     }
 
     // Test the ATS
@@ -133,10 +137,6 @@ void setup() {
     pinMode(LED_pin, OUTPUT);
     start_time = millis();
     writeData("***********************************************************************************");
-
-    #if SIMULATE
-        startSimulation();
-    #endif
 }
 
 
@@ -229,7 +229,7 @@ bool initializeSDCard() {
         delay(1000);
         if (i == 9) {
             Serial.println("SD card initialization failed 10 times. Aborting.");
-            return -1;
+            return false;
         }
     }
 
@@ -265,6 +265,47 @@ void writeData(String text) {
         if (DEBUG) {Serial.println("SD logging failed. Continuing without logging.");}
     }
 }
+
+
+bool setupSensors() {
+  #if SIMULATE
+    Serial.println("(simulation) Sensors connected successfully!");
+    return true;
+  #endif
+
+  Wire.begin();
+  return setupBMP3XX() && setupLSM6DSOX();
+}
+
+
+// Sensor setup functions
+
+// Altimeter
+bool setupBMP3XX() {
+  if (!bmp.begin_I2C()) {
+    Serial.println("Unable to connect to altimeter");
+    return false;
+  }
+  return true;
+}
+
+// IMU
+bool setupLSM6DSOX() {
+  if (!sox.begin_I2C()) {
+    Serial.println("Unable to connect to IMU");
+    return false;
+  }
+  return true;
+}
+
+// Old 2024 sensor
+// bool setupBNO055() {
+//   if (!bno.begin()) {
+//     Serial.println("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+//     return false;
+//   }
+//   return true;
+// }
 
 
 // Get measurements from sensors and return them as a CSV string, also updating global variables as necessary
@@ -313,23 +354,6 @@ float readIMU() {
     float imu_data = 0.0f;
     if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
-}
-
-// Sensor setup functions
-bool setupBMP3XX() {
-  if (!bmp.begin_I2C()) {
-    Serial.print("BMP sensor is bad");
-    return false;
-  }
-  return true;
-}
-
-bool setupBNO055() {
-  if (!bno.begin()) {
-    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    return false;
-  }
-  return true;
 }
 
 
@@ -453,6 +477,7 @@ void startSimulation() {
     simulatedSensorValues->insert("altitude_raw", "0.0");
     simulatedSensorValues->insert("acceleration_raw", "0.0");
     simulatedSensorValues->insert("temperature", "0.0");
+    Serial.println("(simulation) Arduino is ready!");
 }
 
 void collectSimulatedData() {
