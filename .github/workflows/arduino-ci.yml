@@ -33,4 +33,5 @@ jobs:
           arduino-cli config init
           arduino-cli core update-index
           arduino-cli core install arduino:avr # Change this for your board
-          arduino-cli compile --fqbn arduino:avr:uno path/to/your/sketch.ino
+          arduino-cli compile --fqbn arduino:avr:uno datalogger/datalogger.ino
+          arduino-cli compile --fqbn arduino:avr:uno datalogger2025/datalogger2025.ino
