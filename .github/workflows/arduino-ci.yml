@@ -25,7 +25,7 @@ jobs:
 
       # Install Arduino CLI
       - name: Set up Arduino CLI
-        uses: arduino/arduino-cli-action@v1
+        uses: arduino/setup-arduino-cli@v2
 
       # Compile the sketch
       - name: Compile Arduino Sketch
