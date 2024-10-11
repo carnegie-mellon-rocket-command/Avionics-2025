@@ -1,18 +1,16 @@
 /*
 Carnegie Schmellon Rocketry Club: Precision INstrumented Experimental Aerial Propulsion Payload for Low-altitude Exploration ("PINEAPPLE") data logger             (see what I did there lol)
 
-This sketch is designed to read data from sensors described below, smooth and filter it, and write it to an SD card. The data is written in a CSV format, with each line containing both raw and filtered measurements.
-This will also use IMU/accelerometer data to determine when the rocket has launched, and will begin logging data at that point. Additionally, when the rocket has landed, it will stop logging data.
-Finally, this code is also responsible for monitoring the rocket's altitude and deploying the ATS as necessary to reach the desired apogee.
+This sketch is designed to read data via SPI from sensors described below, smooth and filter it, and predict the rocket's apogee based on the data, adjusting the ATS system to get as close as possible to the desired altitude.
+This will also use IMU/accelerometer data to determine when the rocket has launched, and will begin logging data to an onboard SD card. The data is written in a CSV format, with each line containing both raw and filtered measurements. Additionally, when the rocket has landed, it will stop logging data.
 
 Sensor/device (model, pin #, protocol):
- - IMU/Accelerometer ()
- - Altimeter ()
- - Thermometer ()
- - Radio transmitter ()
- - STEMnaut interface ()
- - Battery voltage monitor ()
+ - IMU/Accelerometer (LSM6DSOX, 9, SPI)
+ - Altimeter (BMP390, 8, SPI)
+ - Thermometer (LSM6DSOX (built in to IMU), 9, SPI)
  - ATS Servo (???, 6, Arduino Servo library)
+
+SPI pins are the default hardware SPI pins on the Teensy 4.1 (MISO = 12, MOSI = 11, SCK = 13)
 
 More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2ky337JQ54YeVqc5DDVWyw8OYpTEvQ4oI/edit
 
@@ -27,10 +25,10 @@ Made by the 2025 Avionics team :D
 #define SIMULATE false
 
 // Whether to print debugging messages to the serial monitor (even if SIMULATE is off)
-const bool DEBUG = true; 
+const bool DEBUG = true;
 
 // How frequently data should be collected (in milliseconds)
-const int loop_target = 10; // 10 Hz
+const int loop_target = 10; // 100 Hz
 
 // Target altitude in feet
 const float alt_target = 5000.0f;
@@ -51,12 +49,17 @@ const float alt_target = 5000.0f;
 // sensor libraries
 #include <Adafruit_BMP3XX.h>
 #include <Adafruit_LSM6DSOX.h>
-// #include <Adafruit_BNO055.h>        // not using this one anymore!
 
 
 // PIN DEFINITIONS
 const int ats_pin = 6;
 const int LED_pin = LED_BUILTIN;
+const int IMU_chip_select = 9;
+const int altimeter_chip_select = 8;
+// We shouldn't need to define these if the Teensy has dedicated hardware SPI pins
+// const int MIS0 = 12;
+// const int MOSI = 11;
+// const int SCK = 13;
 
 
 // ATS SERVO PARAMETERS
@@ -64,10 +67,6 @@ Servo ATS_servo;
 float ats_position = 0.0f;
 const int ats_min = 0;
 const int ats_max = 78;
-
-
-// RADIO PARAMETERS
-
 
 
 // SD CARD PARAMETERS
@@ -79,7 +78,7 @@ bool sd_active = false;
 
 Adafruit_BMP3XX bmp;
 Adafruit_LSM6DSOX sox;
-//Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x28);
+sensors_event_t accel, gyro, temp;
 
 
 // MEASUREMENT CONSTANTS AND VARIABLES
@@ -95,6 +94,8 @@ unsigned long start_time, curr_time, timer, loop_time, prev_loop_time = 0;
 
 // Filtered measurements shall be kept as global variables; raw data will be kept local to save memory
 long altitude_filtered, velocity_filtered, acceleration_filtered;
+// We don't necessarily need this variable at this point, but it will be used when more advanced filtering techniques are implemented
+long previous_velocity_filtered = 0.0;
 
 // Remembers if the rocket has launched and landed
 bool launched, landed;
@@ -107,6 +108,9 @@ const float accel_threshold = 10.0f;
 const float velocity_threshold = 0.1f;
 
 
+// UNITS
+#define SEALEVELPRESSURE_HPA (1013.25)
+#define METERS_TO_FEET 3.28084
 
 
 // Entry point to the program
@@ -267,22 +271,21 @@ void writeData(String text) {
 }
 
 
+// Sensor setup functions
+
+// Initialize all sensors and return true if successful, false if any have failed
 bool setupSensors() {
   #if SIMULATE
     Serial.println("(simulation) Sensors connected successfully!");
     return true;
   #endif
 
-  Wire.begin();
   return setupBMP3XX() && setupLSM6DSOX();
 }
 
-
-// Sensor setup functions
-
 // Altimeter
 bool setupBMP3XX() {
-  if (!bmp.begin_I2C()) {
+  if (!bmp.begin_SPI(altimeter_chip_select)) {
     Serial.println("Unable to connect to altimeter");
     return false;
   }
@@ -291,21 +294,13 @@ bool setupBMP3XX() {
 
 // IMU
 bool setupLSM6DSOX() {
-  if (!sox.begin_I2C()) {
+  if (!sox.begin_SPI(IMU_chip_select)) {
     Serial.println("Unable to connect to IMU");
     return false;
   }
   return true;
 }
 
-// Old 2024 sensor
-// bool setupBNO055() {
-//   if (!bno.begin()) {
-//     Serial.println("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-//     return false;
-//   }
-//   return true;
-// }
 
 
 // Get measurements from sensors and return them as a CSV string, also updating global variables as necessary
@@ -318,6 +313,7 @@ String getMeasurements() {
 
     float altitude_raw, acceleration_raw;
 
+    updateIMU();
     altitude_raw = readAltimeter();
     acceleration_raw = readIMU();
 
@@ -336,30 +332,40 @@ String getMeasurements() {
 // Filter raw data and store it in global variables; still need to implement
 void filterData(float alt, float acc) {
     altitude_filtered = alt;
-    velocity_filtered = 0;
+    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / loop_time;
     acceleration_filtered = acc;
+    previous_velocity_filtered = velocity_filtered;
 }
 
 
-// Read altitude from altimeter and return it
+// Read altitude from altimeter (in feet) and return it
 float readAltimeter() {
-    float altimeter_data = 0.0f;
+    float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
     if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
     return altimeter_data;
 }
 
+// Poll all measurements from IMU at once
+void updateIMU() {
+    sox.getEvent(&accel, &gyro, &temp);
+}
 
-// Read IMU data, get vertical acceleration, and return it
+// Read IMU data, get vertical acceleration (in feet/second^2), and return it
 float readIMU() {
-    float imu_data = 0.0f;
+    // If the IMU is positioned vertically, then can save time like so
+    // float imu_data = accel.acceleration.z;
+    // Otherwise, assume the IMU is positioned at a strange angle
+    float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
+    // Convert to feet
+    imu_data = imu_data * METERS_TO_FEET;
     if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
 }
 
 
-// Read temperature from thermometer and return it
+// Read temperature from thermometer (in degrees C) and return it
 float readThermometer() {
-    float thermometer_data = 0.0f;
+    float thermometer_data = temp.temperature;
     if (DEBUG) {Serial.println("Thermometer: " + String(thermometer_data));}
     return thermometer_data;
 }
@@ -454,9 +460,9 @@ void LEDLogging() {
 
 void LEDSuccess() {
     for (int i = 0; i < 4; i++) {
-        digitalWrite(LED_pin, HIGH);
-        delay(250);
         digitalWrite(LED_pin, LOW);
+        delay(250);
+        digitalWrite(LED_pin, HIGH);
         delay(250);
     }
 }
