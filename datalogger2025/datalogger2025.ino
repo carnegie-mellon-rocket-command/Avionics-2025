@@ -24,6 +24,9 @@ Made by the 2025 Avionics team :D
 // Don't forget to set to false before launch!!!!!
 #define SIMULATE false
 
+// Whether we are flying the subscale rocket or not (no ATS servo)
+#define SUBSCALE true
+
 // Whether to print debugging messages to the serial monitor (even if SIMULATE is off)
 const bool DEBUG = true;
 
@@ -430,6 +433,9 @@ void attachATS() {
     #if SIMULATE
         return;
     #endif
+    #if SUBSCALE
+        return;
+    #endif
 
     ATS_servo.attach(ats_pin);
 }
@@ -437,6 +443,9 @@ void attachATS() {
 // Turns off the ATS servo (to save power)
 void detachATS() {
     #if SIMULATE
+        return;
+    #endif
+    #if SUBSCALE
         return;
     #endif
 
@@ -448,6 +457,9 @@ void detachATS() {
 void setATSPosition(float val) {
     #if SIMULATE
         // Serial.println("(simulation) ATS position:" + String(val));
+        return;
+    #endif
+    #if SUBSCALE
         return;
     #endif
 
