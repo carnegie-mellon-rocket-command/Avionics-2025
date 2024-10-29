@@ -94,6 +94,10 @@ unsigned long start_time, curr_time, timer, loop_time, prev_loop_time = 0;
 
 // Filtered measurements shall be kept as global variables; raw data will be kept local to save memory
 long altitude_filtered, velocity_filtered, acceleration_filtered;
+// Internal stuff for the Kalman Filter
+long altitude_filtered_previous, acceleration_filtered_previous = 0.0;
+long gain_altitude, gain_acceleration, cov_altitude_current, cov_acceleration_current, cov_altitude_previous, cov_acceleration_previous = 0.0;
+long variance_altitude, variance_acceleration = 0.1;     // Might want to change these based on experiments or by calculating in flight
 // We don't necessarily need this variable at this point, but it will be used when more advanced filtering techniques are implemented
 long previous_velocity_filtered = 0.0;
 
@@ -331,10 +335,41 @@ String getMeasurements() {
 
 // Filter raw data and store it in global variables; still need to implement
 void filterData(float alt, float acc) {
-    altitude_filtered = alt;
-    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / loop_time;
-    acceleration_filtered = acc;
-    previous_velocity_filtered = velocity_filtered;
+
+    // altitude_filtered = alt;
+    // velocity_filtered = (altitude_filtered - previous_velocity_filtered) / loop_time;
+    // acceleration_filtered = acc;
+    // previous_velocity_filtered = velocity_filtered;
+
+    // Low pass filter: if data is sus, extrapolate from previous data instead
+    if (abs(alt - altitude_filtered) < 100) {
+        alt = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
+    }
+    if (abs(acc - acceleration_filtered) < 100) {
+        acc = acceleration_filtered;
+    }
+
+    // Kalman Filter
+
+    // Update altitude
+    // altitude_filtered_previous = altitude_filtered; // Should update via dynamics model (TODO)
+    altitude_filtered_previous = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
+    cov_altitude_previous = cov_altitude_current; // Should update via dynamics model (TODO)
+
+    altitude_filtered = altitude_filtered_previous + gain_altitude * (alt - altitude_filtered_previous);
+    cov_altitude_current = (1 - gain_altitude) * cov_altitude_previous;
+    gain_altitude = cov_altitude_current / (cov_altitude_current + variance_altitude);
+
+    // Update acceleration
+    acceleration_filtered_previous = acceleration_filtered; // Should update via dynamics model (TODO)
+    cov_acceleration_previous = cov_acceleration_current; // Should update via dynamics model (TODO)
+
+    acceleration_filtered = acceleration_filtered_previous + gain_acceleration * (acc - acceleration_filtered_previous);
+    cov_acceleration_current = (1 - gain_acceleration) * cov_acceleration_previous;
+    gain_acceleration = cov_acceleration_current / (cov_acceleration_current + variance_acceleration);
+
+    // Interpolate velocity
+    velocity_filtered = (altitude_filtered - altitude_filtered_previous) / loop_time;
 }
 
 
