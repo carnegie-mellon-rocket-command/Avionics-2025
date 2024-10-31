@@ -75,7 +75,7 @@ const int ats_max = 78;
 
 
 // SD CARD PARAMETERS
-const int chip_select = 10;
+const int chip_select = 0;
 bool sd_active = false;
 
 
@@ -126,21 +126,23 @@ const float velocity_threshold = 0.1f;
 // Initializes all sensors and devices, and briefly tests the ATS
 void setup() {
     Serial.begin(115200);
+    Serial.println("Initializing...");
 
     #if SIMULATE
         startSimulation();
     #endif
 
     // Initialize SD card
-    if (!initializeSDCard()) {
-        // Tries to initialize the SD card 10 times before giving up
-        // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
-        LEDError();
-    }
+    // if (!initializeSDCard()) {
+    //     // Tries to initialize the SD card 10 times before giving up
+    //     // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
+    //     LEDError();
+    // }
 
     // Initialize sensors
     if (!setupSensors()) {
         // If one of the sensors doesn't connect, stop execution and blinks onboard LED to indicate an error
+        Serial.println("Sensor setup failed. Aborting.");
         LEDError();
     }
 
@@ -266,6 +268,7 @@ void writeData(String text) {
     if (sd_active) {
         File data_file = SD.open("datalog.txt", FILE_WRITE);
         if (data_file) {
+            if (DEBUG) {Serial.println("Writing to SD card: " + text);}
             data_file.println(text);
             data_file.close();
         } else {
