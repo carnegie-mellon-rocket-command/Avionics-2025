@@ -12,6 +12,8 @@ Sensor/device (model, pin #, protocol):
 
 SPI pins are the default hardware SPI pins on the Teensy 4.1 (MISO = 12, MOSI = 11, SCK = 13)
 
+DEBUGGING: if the onboard LED flashes rapidly a few times, then stays on, everything has been initialized correctly. If the LED blinks slowly, there is an error with the SD card or one of the sensors.
+
 More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2ky337JQ54YeVqc5DDVWyw8OYpTEvQ4oI/edit
 
 Made by the 2025 Avionics team :D
@@ -57,8 +59,8 @@ const float alt_target = 5000.0f;
 // PIN DEFINITIONS
 const int ats_pin = 6;
 const int LED_pin = LED_BUILTIN;
-const int IMU_chip_select = 9;
-const int altimeter_chip_select = 8;
+const int IMU_chip_select = 9;    // SOX
+const int altimeter_chip_select = 1;     // BMP
 // We shouldn't need to define these if the Teensy has dedicated hardware SPI pins
 // const int MIS0 = 12;
 // const int MOSI = 11;
@@ -79,8 +81,8 @@ bool sd_active = false;
 
 // SENSOR OBJECTS AND PARAMETERS
 
-Adafruit_BMP3XX bmp;
-Adafruit_LSM6DSOX sox;
+Adafruit_BMP3XX bmp;     // Altimeter
+Adafruit_LSM6DSOX sox;    // IMU
 sensors_event_t accel, gyro, temp;
 
 
@@ -147,6 +149,7 @@ void setup() {
 
     pinMode(LED_pin, OUTPUT);
     start_time = millis();
+    Serial.println("Arduino is ready!");
     writeData("***********************************************************************************");
 }
 
@@ -301,7 +304,7 @@ bool setupBMP3XX() {
 
 // IMU
 bool setupLSM6DSOX() {
-  if (!sox.begin_SPI(IMU_chip_select)) {
+  if (!sox.begin_I2C()) {
     Serial.println("Unable to connect to IMU");
     return false;
   }
@@ -311,7 +314,7 @@ bool setupLSM6DSOX() {
 
 
 // Get measurements from sensors and return them as a CSV string, also updating global variables as necessary
-// Format: time, altitude_raw, acceleration_raw, altitude_filtered, velocity_filtered, acceleration_filtered, temperature, ats_position
+// Format: time, pressure (hPa), altitude_raw (m), acceleration_raw_x (m/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, altitude_filtered, velocity_filtered, acceleration_filtered, temperature (from IMU, degrees C), ats_position (degrees)
 String getMeasurements() {
     #if SIMULATE
         // If simulation mode is ON, get simulated data from serial bus instead
@@ -320,13 +323,14 @@ String getMeasurements() {
 
     float altitude_raw, acceleration_raw;
 
+    updateAltimeter();
     updateIMU();
     altitude_raw = readAltimeter();
     acceleration_raw = readIMU();
 
     filterData(altitude_raw, acceleration_raw);
 
-    String movement_data = String(altitude_raw) + "," + String(acceleration_raw) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
+    String movement_data = String(bmp.pressure/100.0) + "," + String(bmp.readAltitude(SEALEVELPRESSURE_HPA)) + "," + String(accel.acceleration.x) + "," + String(accel.acceleration.y) + "," + String(accel.acceleration.z) + "," + String(gyro.gyro.x) + "," + String(gyro.gyro.y) + "," + String(gyro.gyro.z) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
 
     String time_data = String(millis() - start_time);
 
@@ -339,48 +343,52 @@ String getMeasurements() {
 // Filter raw data and store it in global variables; still need to implement
 void filterData(float alt, float acc) {
 
-    // altitude_filtered = alt;
-    // velocity_filtered = (altitude_filtered - previous_velocity_filtered) / loop_time;
-    // acceleration_filtered = acc;
-    // previous_velocity_filtered = velocity_filtered;
+    altitude_filtered = alt;
+    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / loop_time;
+    acceleration_filtered = acc;
 
-    // Low pass filter: if data is sus, extrapolate from previous data instead
-    if (abs(alt - altitude_filtered) < 100) {
-        alt = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
-    }
-    if (abs(acc - acceleration_filtered) < 100) {
-        acc = acceleration_filtered;
-    }
+    // // Low pass filter: if data is sus, extrapolate from previous data instead
+    // if (abs(alt - altitude_filtered) < 100) {
+    //     alt = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
+    // }
+    // if (abs(acc - acceleration_filtered) < 100) {
+    //     acc = acceleration_filtered;
+    // }
 
-    // Kalman Filter
+    // // Kalman Filter
 
-    // Update altitude
-    // altitude_filtered_previous = altitude_filtered; // Should update via dynamics model (TODO)
-    altitude_filtered_previous = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
-    cov_altitude_previous = cov_altitude_current; // Should update via dynamics model (TODO)
+    // // Update altitude
+    // // altitude_filtered_previous = altitude_filtered; // Should update via dynamics model (TODO)
+    // altitude_filtered_previous = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
+    // cov_altitude_previous = cov_altitude_current; // Should update via dynamics model (TODO)
 
-    altitude_filtered = altitude_filtered_previous + gain_altitude * (alt - altitude_filtered_previous);
-    cov_altitude_current = (1 - gain_altitude) * cov_altitude_previous;
-    gain_altitude = cov_altitude_current / (cov_altitude_current + variance_altitude);
+    // altitude_filtered = altitude_filtered_previous + gain_altitude * (alt - altitude_filtered_previous);
+    // cov_altitude_current = (1 - gain_altitude) * cov_altitude_previous;
+    // gain_altitude = cov_altitude_current / (cov_altitude_current + variance_altitude);
 
-    // Update acceleration
-    acceleration_filtered_previous = acceleration_filtered; // Should update via dynamics model (TODO)
-    cov_acceleration_previous = cov_acceleration_current; // Should update via dynamics model (TODO)
+    // // Update acceleration
+    // acceleration_filtered_previous = acceleration_filtered; // Should update via dynamics model (TODO)
+    // cov_acceleration_previous = cov_acceleration_current; // Should update via dynamics model (TODO)
 
-    acceleration_filtered = acceleration_filtered_previous + gain_acceleration * (acc - acceleration_filtered_previous);
-    cov_acceleration_current = (1 - gain_acceleration) * cov_acceleration_previous;
-    gain_acceleration = cov_acceleration_current / (cov_acceleration_current + variance_acceleration);
+    // acceleration_filtered = acceleration_filtered_previous + gain_acceleration * (acc - acceleration_filtered_previous);
+    // cov_acceleration_current = (1 - gain_acceleration) * cov_acceleration_previous;
+    // gain_acceleration = cov_acceleration_current / (cov_acceleration_current + variance_acceleration);
 
-    // Interpolate velocity
-    velocity_filtered = (altitude_filtered - altitude_filtered_previous) / loop_time;
+    // // Interpolate velocity
+    // velocity_filtered = (altitude_filtered - altitude_filtered_previous) / loop_time;
 }
 
 
-// Read altitude from altimeter (in feet) and return it
+// Read altitude from altimeter (in meters) and return it
 float readAltimeter() {
-    float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
+    // float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
+    float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA);
     if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
     return altimeter_data;
+}
+
+void updateAltimeter() {
+    bmp.performReading();
 }
 
 // Poll all measurements from IMU at once
@@ -388,14 +396,12 @@ void updateIMU() {
     sox.getEvent(&accel, &gyro, &temp);
 }
 
-// Read IMU data, get vertical acceleration (in feet/second^2), and return it
+// Read IMU data, get vertical acceleration (in meters/second^2), and return it
 float readIMU() {
-    // If the IMU is positioned vertically, then can save time like so
-    // float imu_data = accel.acceleration.z;
     // Otherwise, assume the IMU is positioned at a strange angle
     float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
     // Convert to feet
-    imu_data = imu_data * METERS_TO_FEET;
+    // imu_data = imu_data * METERS_TO_FEET;
     if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
 }
