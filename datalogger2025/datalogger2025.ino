@@ -33,7 +33,7 @@ Made by the 2025 Avionics team :D
 const bool DEBUG = true;
 
 // How frequently data should be collected (in milliseconds)
-const int loop_target = 10; // 100 Hz
+const int loop_target = 25;
 
 // Target altitude in feet
 const float alt_target = 5000.0f;
@@ -59,7 +59,7 @@ const float alt_target = 5000.0f;
 // PIN DEFINITIONS
 const int ats_pin = 6;
 const int LED_pin = LED_BUILTIN;
-const int IMU_chip_select = 9;    // SOX
+// const int IMU_chip_select = 9;    // SOX
 const int altimeter_chip_select = 1;     // BMP
 // We shouldn't need to define these if the Teensy has dedicated hardware SPI pins
 // const int MIS0 = 12;
@@ -77,6 +77,7 @@ const int ats_max = 78;
 // SD CARD PARAMETERS
 const int chip_select = 0;
 bool sd_active = false;
+String file_name = "subscl_1.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 
 
 // SENSOR OBJECTS AND PARAMETERS
@@ -92,7 +93,7 @@ sensors_event_t accel, gyro, temp;
 String buffer;
 
 // Number of measurements to take before writing to SD card
-const int buffer_size = 500;
+const int buffer_size = 50;
 
 // Keeps track of time to make sure we are taking measurements at a consistent rate
 unsigned long start_time, curr_time, timer, loop_time, prev_loop_time = 0;
@@ -112,7 +113,7 @@ unsigned long launch_time;
 unsigned long land_time = 0;
 
 // Acceleration threshold for launch detection
-const float accel_threshold = 10.0f;
+const float accel_threshold = 30.0f;
 // Velocity threshold for landing detection
 const float velocity_threshold = 0.1f;
 
@@ -128,16 +129,17 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Initializing...");
 
+
     #if SIMULATE
         startSimulation();
     #endif
 
     // Initialize SD card
-    // if (!initializeSDCard()) {
-    //     // Tries to initialize the SD card 10 times before giving up
-    //     // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
-    //     LEDError();
-    // }
+    if (!initializeSDCard()) {
+        // Tries to initialize the SD card 10 times before giving up
+        // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
+        LEDError();
+    }
 
     // Initialize sensors
     if (!setupSensors()) {
@@ -152,7 +154,7 @@ void setup() {
     pinMode(LED_pin, OUTPUT);
     start_time = millis();
     Serial.println("Arduino is ready!");
-    writeData("***********************************************************************************");
+    writeData("***************** START OF DATA ***************** BOOT TIME: " + String(millis()) + " ***************** TICK SPEED: " + String(loop_target) + "ms\n");
 }
 
 
@@ -172,6 +174,7 @@ void loop() {
 
         // Detect launch based on acceleration threshold
         if (acceleration_filtered > accel_threshold && !launched) {
+            // Serial.println(acceleration_filtered);
             launched = true;
             launch_time = millis();
             if (DEBUG) {Serial.println("Rocket has launched!");}
@@ -190,7 +193,6 @@ void loop() {
 
             if (detectLanding()) {
                 landed = true;
-                if (DEBUG) {Serial.println("Rocket has landed!");}
                 ATS_servo.detach();
             }
         }
@@ -202,7 +204,8 @@ void loop() {
 
     if (landed) {
         // End the program
-        return;
+        if (DEBUG) {Serial.println("Rocket has landed, ending program");}
+        while (true);
     }
 }
 
@@ -210,13 +213,14 @@ void loop() {
 // Function to handle loop timing: delays the loop to ensure it runs at a consistent rate
 void run_timer() {
     long temp_time = millis() - prev_loop_time;
-    Serial.println(temp_time);
+    // Serial.println(temp_time);
     if (temp_time < loop_target) {
         delayMicroseconds((loop_target - temp_time) * 1000);
     }
     curr_time = millis();
     timer = curr_time - start_time;
     loop_time = curr_time - prev_loop_time;
+    // Serial.println(loop_time);
     prev_loop_time = curr_time;
 }
 
@@ -266,16 +270,16 @@ void writeData(String text) {
     #endif
 
     if (sd_active) {
-        File data_file = SD.open("datalog.txt", FILE_WRITE);
+        File data_file = SD.open("subscl_1.txt", FILE_WRITE);
         if (data_file) {
-            if (DEBUG) {Serial.println("Writing to SD card: " + text);}
-            data_file.println(text);
+            if (DEBUG) {Serial.println("Writing to SD card!");}
+            data_file.print(text);
             data_file.close();
         } else {
             // Could leave this out so the program tries to keep logging data even if it fails once
             // sd_active = false;
 
-            Serial.println("Error opening datalog.txt");
+            Serial.println("Error opening subscl_1.txt");
         }
     } else {
         // If the SD card has not connected successfully
@@ -293,7 +297,11 @@ bool setupSensors() {
     return true;
   #endif
 
-  return setupBMP3XX() && setupLSM6DSOX();
+  if (setupBMP3XX() && setupLSM6DSOX()) {
+    if (DEBUG) {Serial.println("Sensors initialized successfully!");}
+    return true;
+  }
+  return false;
 }
 
 // Altimeter
@@ -338,8 +346,8 @@ String getMeasurements() {
     String time_data = String(millis() - start_time);
 
     String sensor_data = String(readThermometer());
-
-    return time_data + "," + movement_data + "," + sensor_data + "," + ats_position;
+    // Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position));
+    return time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position);
 }
 
 
@@ -386,7 +394,7 @@ void filterData(float alt, float acc) {
 float readAltimeter() {
     // float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
     float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA);
-    if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
+    // if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
     return altimeter_data;
 }
 
@@ -405,7 +413,7 @@ float readIMU() {
     float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
     // Convert to feet
     // imu_data = imu_data * METERS_TO_FEET;
-    if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
+    // if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
 }
 
@@ -413,13 +421,18 @@ float readIMU() {
 // Read temperature from thermometer (in degrees C) and return it
 float readThermometer() {
     float thermometer_data = temp.temperature;
-    if (DEBUG) {Serial.println("Thermometer: " + String(thermometer_data));}
+    // if (DEBUG) {Serial.println("Thermometer: " + String(thermometer_data));}
     return thermometer_data;
 }
 
 
 // Detect if the rocket has landed: if the rocket has been reasonably still for 5 seconds, it is considered landed
 bool detectLanding() {
+    if (launch_time != 0 && millis() - launch_time > 60000) {
+        return true;
+    }
+
+
     if (velocity_filtered < velocity_threshold) {
         land_time = millis();
     }

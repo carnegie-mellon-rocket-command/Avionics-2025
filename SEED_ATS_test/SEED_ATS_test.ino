@@ -2,7 +2,8 @@
 #include <Adafruit_LSM6DSOX.h>
 #include <Adafruit_BMP3XX.h>
 #include <Wire.h>
-#include <SPI.h>
+// #include <SPI.h>
+#include <SD.h>
 
 #define BMP_CS 1
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -20,14 +21,21 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
   delay(1000);
 
+  while (!SD.begin(3)) {
+    Serial.println("can't connect to SD card");
+    delay(500);
+  }
+
   // BMP390 setup
   while (!bmp.begin_SPI(1)) {
     Serial.println("no altimeter connection");
+    delay(500);
   }
 
   // IMU setup
   while (!lsm6ds.begin_I2C()) {
     Serial.println("no IMU connection");
+    delay(500);
   }
 
   Serial.println("initialization done.");
