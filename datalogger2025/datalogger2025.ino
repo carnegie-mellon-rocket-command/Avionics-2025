@@ -112,7 +112,7 @@ float previous_velocity_filtered = 0.0;
 bool launched, landed;
 unsigned long launch_time;
 unsigned long land_time = 0;
-float[] gravity_normal_vector = {0.0, 0.0, 0.0};
+float gravity_normal_vector[3] = {0.0, 0.0, 0.0};
 
 
 // Acceleration threshold for launch detection
