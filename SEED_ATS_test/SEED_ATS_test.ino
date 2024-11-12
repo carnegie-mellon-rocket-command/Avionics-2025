@@ -51,37 +51,37 @@ void loop() {
   lsm6ds.getEvent(&accel, &gyro, &temp);
 
   /* Display the results (acceleration is measured in m/s^2) */
-  Serial.print("\t\tAccel X: ");
-  Serial.print(accel.acceleration.x, 4);
-  Serial.print(" \tY: ");
-  Serial.print(accel.acceleration.y, 4);
-  Serial.print(" \tZ: ");
-  Serial.print(accel.acceleration.z, 4);
-  Serial.println(" \tm/s^2 ");
+  // Serial.print("\t\tAccel X: ");
+  // Serial.print(accel.acceleration.x, 4);
+  // Serial.print(" \tY: ");
+  // Serial.print(accel.acceleration.y, 4);
+  // Serial.print(" \tZ: ");
+  // Serial.print(accel.acceleration.z, 4);
+  // Serial.println(" \tm/s^2 ");
 
   /* Display the results (rotation is measured in rad/s) */
-  Serial.print("\t\tGyro  X: ");
-  Serial.print(gyro.gyro.x, 4);
-  Serial.print(" \tY: ");
-  Serial.print(gyro.gyro.y, 4);
-  Serial.print(" \tZ: ");
-  Serial.print(gyro.gyro.z, 4);
-  Serial.println(" \tradians/s ");
+  // Serial.print("\t\tGyro  X: ");
+  // Serial.print(gyro.gyro.x, 4);
+  // Serial.print(" \tY: ");
+  // Serial.print(gyro.gyro.y, 4);
+  // Serial.print(" \tZ: ");
+  // Serial.print(gyro.gyro.z, 4);
+  // Serial.println(" \tradians/s ");
 
   // Temp
-  Serial.print("\t\tTemp   :\t\t\t\t\t");
-  Serial.print(temp.temperature);
-  Serial.println(" \tdeg C");
-  Serial.println();
+  // Serial.print("\t\tTemp   :\t\t\t\t\t");
+  // Serial.print(temp.temperature);
+  // Serial.println(" \tdeg C");
+  // Serial.println();
 
   // Altimeter reading
     if (! bmp.performReading()) {
     Serial.println("Failed to perform reading :(");
     return;
   }
-  Serial.print("Temperature = ");
-  Serial.print(bmp.temperature);
-  Serial.println(" *C");
+  // Serial.print("Temperature = ");
+  // Serial.print(bmp.temperature);
+  // Serial.println(" *C");
 
   Serial.print("Pressure = ");
   Serial.print(bmp.pressure / 100.0);

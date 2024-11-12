@@ -19,6 +19,7 @@ More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2
 Made by the 2025 Avionics team :D
 */
 
+// TODO: Kalman filter, altitude prediction
 
 // IMPORTANT CONSTANTS
 
@@ -99,21 +100,23 @@ const int buffer_size = 50;
 unsigned long start_time, curr_time, timer, loop_time, prev_loop_time = 0;
 
 // Filtered measurements shall be kept as global variables; raw data will be kept local to save memory
-long altitude_filtered, velocity_filtered, acceleration_filtered;
+float altitude_filtered, velocity_filtered, acceleration_filtered;
 // Internal stuff for the Kalman Filter
-long altitude_filtered_previous, acceleration_filtered_previous = 0.0;
-long gain_altitude, gain_acceleration, cov_altitude_current, cov_acceleration_current, cov_altitude_previous, cov_acceleration_previous = 0.0;
-long variance_altitude, variance_acceleration = 0.1;     // Might want to change these based on experiments or by calculating in flight
+float altitude_filtered_previous, acceleration_filtered_previous = 0.0;
+float gain_altitude, gain_acceleration, cov_altitude_current, cov_acceleration_current, cov_altitude_previous, cov_acceleration_previous = 0.0;
+float variance_altitude, variance_acceleration = 0.1;     // Might want to change these based on experiments or by calculating in flight
 // We don't necessarily need this variable at this point, but it will be used when more advanced filtering techniques are implemented
-long previous_velocity_filtered = 0.0;
+float previous_velocity_filtered = 0.0;
 
 // Remembers if the rocket has launched and landed
 bool launched, landed;
 unsigned long launch_time;
 unsigned long land_time = 0;
+float[] gravity_normal_vector = {0.0, 0.0, 0.0};
+
 
 // Acceleration threshold for launch detection
-const float accel_threshold = 30.0f;
+const float accel_threshold = 20.0f;
 // Velocity threshold for landing detection
 const float velocity_threshold = 0.1f;
 
@@ -201,6 +204,10 @@ void loop() {
         // Write batch of data to SD card
         writeData(buffer);
     }
+    else {
+        // If rocket has not launched yet, assume it's still on the pad, and find which way is down
+        updatePrelaunchNormalVector();
+    }
 
     if (landed) {
         // End the program
@@ -257,7 +264,7 @@ bool initializeSDCard() {
 
     sd_active = true;
     // Write CSV header to the file
-    // writeData("time,altitude_raw,acceleration_raw,altitude_filtered,velocity_filtered,acceleration_filtered,temperature,ats_position\n");
+    writeData("time, pressure (hPa), altitude_raw (m), acceleration_raw_x (m/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, altitude_filtered, velocity_filtered, acceleration_filtered, temperature (from IMU, degrees C), ats_position (degrees)\n");
     return true;
 }
 
@@ -355,7 +362,7 @@ String getMeasurements() {
 void filterData(float alt, float acc) {
 
     altitude_filtered = alt;
-    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / loop_time;
+    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / (loop_time/10000);
     acceleration_filtered = acc;
 
     // // Low pass filter: if data is sus, extrapolate from previous data instead
@@ -409,14 +416,24 @@ void updateIMU() {
 
 // Read IMU data, get vertical acceleration (in meters/second^2), and return it
 float readIMU() {
-    // Otherwise, assume the IMU is positioned at a strange angle
+    // Assume the IMU is positioned at a strange angle, but that all relevant acceleration is upward
     float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
+    // If the net acceleration is in the same direction as gravity, make it negative for "downward"
+    if (accel.acceleration.x * gravity_normal_vector[0] + accel.acceleration.y * gravity_normal_vector[1] + accel.acceleration.z * gravity_normal_vector[2] >= 0) {
+        imu_data = -imu_data;
+    }
     // Convert to feet
     // imu_data = imu_data * METERS_TO_FEET;
     // if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
 }
 
+void updatePrelaunchNormalVector() {
+    // Get the average acceleration vector (from gravity) before launch
+    gravity_normal_vector[0] = accel.acceleration.x;
+    gravity_normal_vector[1] = accel.acceleration.y;
+    gravity_normal_vector[2] = accel.acceleration.z;
+}
 
 // Read temperature from thermometer (in degrees C) and return it
 float readThermometer() {
