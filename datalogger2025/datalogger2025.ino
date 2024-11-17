@@ -19,9 +19,9 @@ More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2
 Made by the 2025 Avionics team :D
 */
 
-// TODO: Kalman filter, altitude prediction
+// TODO: Kalman filter
 
-// IMPORTANT CONSTANTS
+// IMPORTANT CONSTANTS (Using IPS)
 
 // ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
 // Don't forget to set to false before launch!!!!!
@@ -37,8 +37,11 @@ const bool DEBUG = true;
 const int loop_target = 25;
 
 // Target altitude in feet
-const float alt_target = 5000.0f;
-
+#if SUBSCALE
+    const float alt_target = 2000.0f;
+#else
+    const float alt_target = 5000.0f;
+#endif
 
 
 // LIBRARIES
@@ -78,7 +81,7 @@ const int ats_max = 78;
 // SD CARD PARAMETERS
 const int chip_select = 0;
 bool sd_active = false;
-String file_name = "subscl_1.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
+String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 
 
 // SENSOR OBJECTS AND PARAMETERS
@@ -125,6 +128,12 @@ const float velocity_threshold = 0.1f;
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define METERS_TO_FEET 3.28084
 
+#define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
+#define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
+#define ROCKET_CROSS_SECTIONAL_AREA 0.1f // ft^2
+#define ROCKET_MASS 3.0f // lbs
+#define ATS_MAX_SURFACE_AREA 1.5*ROCKET_CROSS_SECTIONAL_AREA // TODO: figure out actual value
+#define g 32.174f // ft/s^2
 
 // Entry point to the program
 // Initializes all sensors and devices, and briefly tests the ATS
@@ -157,7 +166,6 @@ void setup() {
     pinMode(LED_pin, OUTPUT);
     start_time = millis();
     Serial.println("Arduino is ready!");
-    writeData("***************** START OF DATA ***************** BOOT TIME: " + String(millis()) + " ***************** TICK SPEED: " + String(loop_target) + "ms\n");
 }
 
 
@@ -177,7 +185,10 @@ void loop() {
 
         // Detect launch based on acceleration threshold
         if (acceleration_filtered > accel_threshold && !launched) {
-            // Serial.println(acceleration_filtered);
+            // Write CSV header to the file
+            writeData("***************** START OF DATA ***************** TIME SINCE BOOT: " + String(millis()) + " ***************** TICK SPEED: " + String(loop_target) + "ms\n");
+            writeData("time, pressure (hPa), altitude_raw (ft), acceleration_raw_x (ft/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, altitude_filtered (ft), velocity_filtered (ft/s), acceleration_filtered (ft/s^2), temperature (from IMU, degrees C), ats_position (servo degrees)\n");
+
             launched = true;
             launch_time = millis();
             if (DEBUG) {Serial.println("Rocket has launched!");}
@@ -263,8 +274,6 @@ bool initializeSDCard() {
     if (DEBUG) {Serial.println("SD card initialized successfully!");}
 
     sd_active = true;
-    // Write CSV header to the file
-    writeData("time, pressure (hPa), altitude_raw (m), acceleration_raw_x (m/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, altitude_filtered, velocity_filtered, acceleration_filtered, temperature (from IMU, degrees C), ats_position (degrees)\n");
     return true;
 }
 
@@ -348,7 +357,7 @@ String getMeasurements() {
 
     filterData(altitude_raw, acceleration_raw);
 
-    String movement_data = String(bmp.pressure/100.0) + "," + String(bmp.readAltitude(SEALEVELPRESSURE_HPA)) + "," + String(accel.acceleration.x) + "," + String(accel.acceleration.y) + "," + String(accel.acceleration.z) + "," + String(gyro.gyro.x) + "," + String(gyro.gyro.y) + "," + String(gyro.gyro.z) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
+    String movement_data = String(bmp.pressure/100.0) + "," + String(bmp.readAltitude(SEALEVELPRESSURE_HPA)) + "," + String(accel.acceleration.x*METERS_TO_FEET) + "," + String(accel.acceleration.y*METERS_TO_FEET) + "," + String(accel.acceleration.z*METERS_TO_FEET) + "," + String(gyro.gyro.x) + "," + String(gyro.gyro.y) + "," + String(gyro.gyro.z) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
 
     String time_data = String(millis() - start_time);
 
@@ -362,7 +371,7 @@ String getMeasurements() {
 void filterData(float alt, float acc) {
 
     altitude_filtered = alt;
-    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / (loop_time/10000);
+    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / (loop_time/1000);
     acceleration_filtered = acc;
 
     // // Low pass filter: if data is sus, extrapolate from previous data instead
@@ -399,8 +408,8 @@ void filterData(float alt, float acc) {
 
 // Read altitude from altimeter (in meters) and return it
 float readAltimeter() {
-    // float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
-    float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA);
+    float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
+    // float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA);
     // if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
     return altimeter_data;
 }
@@ -423,16 +432,16 @@ float readIMU() {
         imu_data = -imu_data;
     }
     // Convert to feet
-    // imu_data = imu_data * METERS_TO_FEET;
+    imu_data = imu_data * METERS_TO_FEET;
     // if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
 }
 
 void updatePrelaunchNormalVector() {
     // Get the average acceleration vector (from gravity) before launch
-    gravity_normal_vector[0] = accel.acceleration.x;
-    gravity_normal_vector[1] = accel.acceleration.y;
-    gravity_normal_vector[2] = accel.acceleration.z;
+    gravity_normal_vector[0] = accel.acceleration.x*METERS_TO_FEET;
+    gravity_normal_vector[1] = accel.acceleration.y*METERS_TO_FEET;
+    gravity_normal_vector[2] = accel.acceleration.z*METERS_TO_FEET;
 }
 
 // Read temperature from thermometer (in degrees C) and return it
@@ -509,19 +518,33 @@ void setATSPosition(float val) {
 
 // Adjust the ATS based on the current altitude and desired apogee
 void adjustATS() {
-    // This is last year's code to adjust the ATS; might need to be changed a bit
-    if (altitude_filtered > alt_target && ats_position < 1.0 && millis() - launch_time > 4500) {
-        // If the rocket is above the target altitude, extend the ATS
-        ats_position += 0.1;
-    } else if (altitude_filtered < alt_target && ats_position > 0.0 && millis() - launch_time > 4500) {
-        // If the rocket is below the target altitude, retract the ATS
-        ats_position -= 0.1;
-    }
-
     if (millis() - launch_time > 18000) {
         // Retract ATS fully after 18 seconds
         setATSPosition(0.0);
-    } else if (millis() - launch_time > 4500) {
+        return;
+    }
+
+    if (altitude_filtered > alt_target) {
+        ats_position = 1.0;
+    }
+    else {
+        // Calculate how wide to make the rocket so its hits its target altitude
+        float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) + 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        // Adjust the ATS based on the target area
+        target_area -= ROCKET_CROSS_SECTIONAL_AREA;
+        ats_position = target_area/ATS_MAX_SURFACE_AREA;
+    }
+
+    // // This is last year's code to adjust the ATS; might need to be changed a bit
+    // if (altitude_filtered > alt_target && ats_position < 1.0 && millis() - launch_time > 4500) {
+    //     // If the rocket is above the target altitude, extend the ATS
+    //     ats_position += 0.1;
+    // } else if (altitude_filtered < alt_target && ats_position > 0.0 && millis() - launch_time > 4500) {
+    //     // If the rocket is below the target altitude, retract the ATS
+    //     ats_position -= 0.1;
+    // }
+
+    if (millis() - launch_time > 4500) {
         // Adjust ATS based on position
         setATSPosition(ats_position);
     }
