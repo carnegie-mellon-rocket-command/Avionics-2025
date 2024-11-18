@@ -524,12 +524,12 @@ void adjustATS() {
         return;
     }
 
-    if (altitude_filtered > alt_target) {
+    if (altitude_filtered >= alt_target) {
         ats_position = 1.0;
     }
     else {
         // Calculate how wide to make the rocket so its hits its target altitude
-        float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) + 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         // Adjust the ATS based on the target area
         target_area -= ROCKET_CROSS_SECTIONAL_AREA;
         ats_position = target_area/ATS_MAX_SURFACE_AREA;
