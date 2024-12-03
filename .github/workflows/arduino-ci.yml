@@ -1,37 +1,40 @@
-name: Arduino Compilation Check
+name: Arduino CI
 
 on:
   push:
     branches:
       - main
-    paths:
-      - "datalogger/datalogger.ino"
-      - "datalogger2025/datalogger2025.ino"
   pull_request:
-    branches:
-      - main
-    paths:
-      - "datalogger/datalogger.ino"
-      - "datalogger2025/datalogger2025.ino"
 
 jobs:
   build:
+    name: Build Arduino Sketch
     runs-on: ubuntu-latest
 
     steps:
-      # Check out the code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Install Arduino CLI
       - name: Set up Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        uses: arduino/setup-arduino-cli@v1
+        with:
+          version: 'latest'
 
-      # Compile the sketch
-      - name: Compile Arduino Sketch
+      - name: Install Seeeduino XIAO core
         run: |
           arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
           arduino-cli core update-index
-          arduino-cli core install arduino:avr # Change this for your board
-          arduino-cli compile --fqbn arduino:avr:uno datalogger/datalogger.ino
-          arduino-cli compile --fqbn arduino:avr:uno datalogger2025/datalogger2025.ino
+          arduino-cli core install Seeeduino:samd
+
+
+      - name: Install Libraries
+        run: |
+          arduino-cli lib install "Adafruit_LSM6DSOX" "Adafruit_BMP3XX" "Wire" "SD" "Servo"
+
+      - name: Compile All Sketches
+        run: |
+          for sketch in $(find . -name '*.ino'); do
+            arduino-cli compile --fqbn Seeeduino:samd:seeed_XIAO_m0 "$sketch"
+          done
+

@@ -21,10 +21,10 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
   delay(1000);
 
-  while (!SD.begin(3)) {
-    Serial.println("can't connect to SD card");
-    delay(500);
-  }
+  // while (!SD.begin(3)) {
+  //   Serial.println("can't connect to SD card");
+  //   delay(500);
+  // }
 
   // BMP390 setup
   while (!bmp.begin_SPI(1)) {
@@ -51,13 +51,13 @@ void loop() {
   lsm6ds.getEvent(&accel, &gyro, &temp);
 
   /* Display the results (acceleration is measured in m/s^2) */
-  // Serial.print("\t\tAccel X: ");
-  // Serial.print(accel.acceleration.x, 4);
-  // Serial.print(" \tY: ");
-  // Serial.print(accel.acceleration.y, 4);
-  // Serial.print(" \tZ: ");
-  // Serial.print(accel.acceleration.z, 4);
-  // Serial.println(" \tm/s^2 ");
+  Serial.print("\t\tAccel X: ");
+  Serial.print(accel.acceleration.x, 4);
+  Serial.print(" \tY: ");
+  Serial.print(accel.acceleration.y, 4);
+  Serial.print(" \tZ: ");
+  Serial.print(accel.acceleration.z, 4);
+  Serial.println(" \tm/s^2 ");
 
   /* Display the results (rotation is measured in rad/s) */
   // Serial.print("\t\tGyro  X: ");
@@ -83,14 +83,14 @@ void loop() {
   // Serial.print(bmp.temperature);
   // Serial.println(" *C");
 
-  Serial.print("Pressure = ");
-  Serial.print(bmp.pressure / 100.0);
-  Serial.println(" hPa");
+  // Serial.print("Pressure = ");
+  // Serial.print(bmp.pressure / 100.0);
+  // Serial.println(" hPa");
 
-  Serial.print("Approx. Altitude = ");
-  Serial.print(bmp.readAltitude(SEALEVELPRESSURE_HPA));
-  Serial.println(" m");
+  // Serial.print("Approx. Altitude = ");
+  // Serial.print(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  // Serial.println(" m");
 
   Serial.println();
-  delay(2000);
+  delay(200);
 }
