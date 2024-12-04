@@ -30,8 +30,8 @@ jobs:
 
       - name: Install Libraries
         run: |
-          arduino-cli lib install "Adafruit_LSM6DSOX@1.1.2" "Adafruit BMP3XX Library@2.1.5" "Dictionary@3.5.0"
-          arduino-cli lib install "Wire" "SD" "Servo"
+          arduino-cli lib install --git-url https://github.com/arduino-libraries/Arduino_LSM6DSOX.git
+          arduino-cli lib install "Dictionary@3.5.0" "Adafruit_LSM6DSOX@1.1.2" "Adafruit BMP3XX Library@2.1.5"
 
       - name: Compile All Sketches
         run: |
