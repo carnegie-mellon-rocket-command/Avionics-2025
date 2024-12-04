@@ -30,6 +30,7 @@ jobs:
 
       - name: Install Libraries
         run: |
+          arduino-cli lib install "Adafruit_LSM6DSOX@1.1.2" "Adafruit BMP3XX Library@2.1.5" "Dictionary@3.5.0"
           arduino-cli lib install "Wire" "SD" "Servo"
 
       - name: Compile All Sketches
