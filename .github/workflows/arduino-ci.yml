@@ -33,6 +33,7 @@ jobs:
         run: |
           arduino-cli lib install --git-url https://github.com/arduino-libraries/Arduino_LSM6DSOX.git https://github.com/adafruit/Adafruit_BMP3XX.git
           arduino-cli lib install "Dictionary@3.5.0"
+          arduino-cli lib install "Servo@latest"
 
       - name: Compile All Sketches
         run: |
