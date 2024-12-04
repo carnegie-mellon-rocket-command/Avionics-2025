@@ -24,7 +24,7 @@ jobs:
         run: |
           arduino-cli config init
           arduino-cli config add board_manager.additional_urls https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
-          arduino-cli config library --enable-unsafe-install true
+          arduino-cli config add library.enable_unsafe_install true
           arduino-cli core update-index
           arduino-cli core install Seeeduino:samd
 
