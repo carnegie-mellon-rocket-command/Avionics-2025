@@ -20,15 +20,55 @@ Made by the 2025 Avionics team :D
 */
 
 
-// IMPORTANT CONSTANTS (Using IPS)
+// ***************** IMPORTANT CONFIGURATION CONSTANTS *****************
 
 // ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
 // Don't forget to set to false before launch!!!!!
 #define SIMULATE false
 
-// Whether we are flying the subscale rocket or not (no ATS servo)
+
+
+// ***************** LIBRARIES *****************
+
+#include <Servo.h>
+#include <SD.h>
+
+// sensor libraries
+#include <Adafruit_BMP3XX.h>
+#include <Adafruit_LSM6DSOX.h>
+
+// Simulation mode libraries
+#if SIMULATE
+    #include <Dictionary.h>
+    Dictionary *simulatedSensorValues = new Dictionary();
+#endif
+
+
+
+
+// ***************** CONSTANTS AND UNITS (in IPS) *****************
+
+// Whether we are flying the subscale rocket or not (different altitiude target)
 #define SUBSCALE true
 
+#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+#define METERS_TO_FEET 3.28084
+
+#define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
+#define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
+#define ROCKET_CROSS_SECTIONAL_AREA 0.1f // The surface area (ft^2) of the rocket facing upwards       TODO: measure actual value 
+#define ROCKET_MASS 3.0f // lbs
+#define ATS_MAX_SURFACE_AREA 1.5*ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended   TODO: figure out actual value
+#define g 32.174f // ft/s^2
+
+
+
+
+// ***************** GLOBALS *****************
+
+// FLIGHT PARAMETERS
 // Whether to print debugging messages to the serial monitor (even if SIMULATE is off)
 const bool DEBUG = true;
 
@@ -42,21 +82,10 @@ const int loop_target = 25;
     const float alt_target = 5000.0f;
 #endif
 
-
-// LIBRARIES
-#include <Servo.h>
-#include <SD.h>
-
-
-// Simulation mode libraries
-#if SIMULATE
-    #include <Dictionary.h>
-    Dictionary *simulatedSensorValues = new Dictionary();
-#endif
-
-// sensor libraries
-#include <Adafruit_BMP3XX.h>
-#include <Adafruit_LSM6DSOX.h>
+// Acceleration threshold for launch detection (ft/s^2)
+const float accel_threshold = 20.0f;
+// Velocity threshold for landing detection (ft/s)
+const float velocity_threshold = 0.1f;
 
 
 // PIN DEFINITIONS
@@ -64,7 +93,7 @@ const int ats_pin = 6;
 const int LED_pin = LED_BUILTIN;
 // const int IMU_chip_select = 9;    // SOX
 const int altimeter_chip_select = 1;     // BMP
-// We shouldn't need to define these if the Teensy has dedicated hardware SPI pins
+// We shouldn't need to define these we use the dedicated hardware SPI pins
 // const int MIS0 = 12;
 // const int MOSI = 11;
 // const int SCK = 13;
@@ -83,7 +112,7 @@ bool sd_active = false;
 String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 
 
-// SENSOR OBJECTS AND PARAMETERS
+// SENSOR OBJECTS
 
 Adafruit_BMP3XX bmp;     // Altimeter
 Adafruit_LSM6DSOX sox;    // IMU
@@ -114,25 +143,9 @@ float previous_velocity_filtered = 0.0;
 bool launched, landed;
 unsigned long launch_time;
 unsigned long land_time = 0;
-float gravity_normal_vector[3] = {0.0, 0.0, 0.0};
+// float gravity_normal_vector[3] = {0.0, 0.0, 0.0};
 
 
-// Acceleration threshold for launch detection
-const float accel_threshold = 20.0f;
-// Velocity threshold for landing detection
-const float velocity_threshold = 0.1f;
-
-
-// UNITS
-#define SEALEVELPRESSURE_HPA (1013.25)
-#define METERS_TO_FEET 3.28084
-
-#define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
-#define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
-#define ROCKET_CROSS_SECTIONAL_AREA 0.1f // ft^2
-#define ROCKET_MASS 3.0f // lbs
-#define ATS_MAX_SURFACE_AREA 1.5*ROCKET_CROSS_SECTIONAL_AREA // TODO: figure out actual value
-#define g 32.174f // ft/s^2
 
 // Entry point to the program
 // Initializes all sensors and devices, and briefly tests the ATS
@@ -206,7 +219,6 @@ void loop() {
 
             if (detectLanding()) {
                 landed = true;
-                ATS_servo.detach();
             }
         }
     }
@@ -214,10 +226,10 @@ void loop() {
         // Write batch of data to SD card
         writeData(buffer);
     }
-    else {
-        // If rocket has not launched yet, assume it's still on the pad, and find which way is down
-        updatePrelaunchNormalVector();
-    }
+    // else {
+    //     // If rocket has not launched yet, assume it's still on the pad, and find which way is down
+    //     updatePrelaunchNormalVector();
+    // }
 
     if (landed) {
         // End the program
@@ -233,6 +245,9 @@ void run_timer() {
     // Serial.println(temp_time);
     if (temp_time < loop_target) {
         delayMicroseconds((loop_target - temp_time) * 1000);
+    }
+    else if (temp_time > loop_target + 1) {
+        Serial.println("Board is unable to keep up with target loop time of " + String(loop_target) + " ms (execution took "+ String(temp_time) + " ms)");
     }
     curr_time = millis();
     timer = curr_time - start_time;
@@ -427,21 +442,21 @@ float readIMU() {
     // Assume the IMU is positioned at a strange angle, but that all relevant acceleration is upward
     float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
     // If the net acceleration is in the same direction as gravity, make it negative for "downward"
-    if (accel.acceleration.x * gravity_normal_vector[0] + accel.acceleration.y * gravity_normal_vector[1] + accel.acceleration.z * gravity_normal_vector[2] >= 0) {
-        imu_data = -imu_data;
-    }
+    // if (accel.acceleration.x * gravity_normal_vector[0] + accel.acceleration.y * gravity_normal_vector[1] + accel.acceleration.z * gravity_normal_vector[2] >= 0) {
+    //     imu_data = -imu_data;
+    // }
     // Convert to feet
     imu_data = imu_data * METERS_TO_FEET;
     // if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
     return imu_data;
 }
 
-void updatePrelaunchNormalVector() {
-    // Get the average acceleration vector (from gravity) before launch
-    gravity_normal_vector[0] = accel.acceleration.x*METERS_TO_FEET;
-    gravity_normal_vector[1] = accel.acceleration.y*METERS_TO_FEET;
-    gravity_normal_vector[2] = accel.acceleration.z*METERS_TO_FEET;
-}
+// void updatePrelaunchNormalVector() {
+//     // Get the average acceleration vector (from gravity) before launch
+//     gravity_normal_vector[0] = accel.acceleration.x*METERS_TO_FEET;
+//     gravity_normal_vector[1] = accel.acceleration.y*METERS_TO_FEET;
+//     gravity_normal_vector[2] = accel.acceleration.z*METERS_TO_FEET;
+// }
 
 // Read temperature from thermometer (in degrees C) and return it
 float readThermometer() {
@@ -480,7 +495,7 @@ void attachATS() {
     #if SIMULATE
         return;
     #endif
-    #if SUBSCALE
+    #if SKIP_ATS
         return;
     #endif
 
@@ -492,7 +507,7 @@ void detachATS() {
     #if SIMULATE
         return;
     #endif
-    #if SUBSCALE
+    #if SKIP_ATS
         return;
     #endif
 
@@ -506,7 +521,7 @@ void setATSPosition(float val) {
         // Serial.println("(simulation) ATS position:" + String(val));
         return;
     #endif
-    #if SUBSCALE
+    #if SKIP_ATS
         return;
     #endif
 
@@ -585,15 +600,24 @@ void LEDError() {
 }
 
 
-// If in simulation mode, updated simulated sensor values from serial bus
+// If in simulation mode, update simulated sensor values from serial bus
 #if SIMULATE
+
+// Begin the simulation by waiting for the host program to start and give confirmation over serial
 void startSimulation() {
     simulatedSensorValues->insert("altitude_raw", "0.0");
     simulatedSensorValues->insert("acceleration_raw", "0.0");
     simulatedSensorValues->insert("temperature", "0.0");
+
+    // Await connection from host computer
+    while (!Serial.readString()) {
+        delay(10);
+    }
+
     Serial.println("(simulation) Arduino is ready!");
 }
 
+// Reads the serial buffer for the most recent data sent by the hosts, and updates the simulatedSensorValues hashmap accordingly
 void collectSimulatedData() {
     String serial_buffer = Serial.readString();
     String current_key, current_value = "";
@@ -616,6 +640,7 @@ float dataAsFloat(String measurement_name) {
     return simulatedSensorValues->search(measurement_name).toFloat();
 }
 
+// Updates the global measurement variables from the simulatedSensorValues hashmap, as opposed to trying to poll sensors
 String getSimulatedMeasurements() {
         collectSimulatedData();
         
