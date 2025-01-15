@@ -31,7 +31,8 @@ jobs:
 
       - name: Install Libraries
         run: |
-          arduino-cli lib install --git-url https://github.com/arduino-libraries/Arduino_LSM6DSOX.git https://github.com/adafruit/Adafruit_BMP3XX.git https://github.com/adafruit/Adafruit_BusIO.git https://github.com/adafruit/Adafruit_Sensor.git https://github.com/adafruit/Adafruit_LSM6DS.git https://github.com/adafruit/Adafruit_BNO055.git
+          arduino-cli lib install --git-url https://github.com/arduino-libraries/Arduino_LSM6DSOX.git https://github.com/adafruit/Adafruit_BMP3XX.git https://github.com/adafruit/Adafruit_BusIO.git https://github.com/adafruit/Adafruit_Sensor.git https://github.com/adafruit/Adafruit_LSM6DS.git https://github.com/adafruit/Adafruit_BNO055.git https://github.com/rfetick/Kalman.git
+          arduino-cli lib install "BasicLinearAlgebra@3.7.0"
           arduino-cli lib install "Dictionary@3.5.0"
           arduino-cli lib install "Servo@1.2.2" "SD@1.3.0"
 

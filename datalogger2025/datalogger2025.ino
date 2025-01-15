@@ -12,19 +12,15 @@ Sensor/device (model, pin #, protocol):
 
 SPI pins are the default hardware SPI pins on the Teensy 4.1 (MISO = 12, MOSI = 11, SCK = 13)
 
+⚠⚠⚠⚠⚠ IMPORTANT ⚠⚠⚠⚠⚠
+The Kalman library needs the BasicLinearAlgebra library version 3.7.0 or before to run for some reason, otherwise it won't compile!!!
+
 DEBUGGING: if the onboard LED flashes rapidly a few times, then stays on, everything has been initialized correctly. If the LED blinks slowly, there is an error with the SD card or one of the sensors.
 
 More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2ky337JQ54YeVqc5DDVWyw8OYpTEvQ4oI/edit
 
 Made by the 2025 Avionics team :D
 */
-
-
-// ***************** IMPORTANT CONFIGURATION CONSTANTS *****************
-
-// ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
-// Don't forget to set to false before launch!!!!!
-#define SIMULATE false
 
 
 
@@ -37,12 +33,24 @@ Made by the 2025 Avionics team :D
 #include <Adafruit_BMP3XX.h>
 #include <Adafruit_LSM6DSOX.h>
 
+#include <BasicLinearAlgebra.h>
+#include <Kalman.h>
+
+
+// ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
+// Don't forget to set to false before launch!!!!!
+#define SIMULATE false
+
+
 // Simulation mode libraries
 #if SIMULATE
     #include <Dictionary.h>
     Dictionary *simulatedSensorValues = new Dictionary();
 #endif
 
+
+// Magic
+using namespace BLA;
 
 
 
@@ -63,7 +71,15 @@ Made by the 2025 Avionics team :D
 #define ATS_MAX_SURFACE_AREA 1.5*ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended   TODO: figure out actual value
 #define g 32.174f // ft/s^2
 
-
+// Kalman filter parameters
+#define NumStates 3
+#define NumObservations 2
+#define AltimeterNoise 1.0  // TODO: change
+#define IMUNoise 1.0   // TODO: change
+// Model covariance (TODO: change)
+#define m_p 0.1
+#define m_s 0.1
+#define m_a 0.8
 
 
 // ***************** GLOBALS *****************
@@ -128,7 +144,7 @@ String buffer;
 const int buffer_size = 50;
 
 // Keeps track of time to make sure we are taking measurements at a consistent rate
-unsigned long start_time, curr_time, timer, loop_time, prev_loop_time = 0;
+unsigned long start_time, curr_time, timer, loop_time_delta, prev_loop_time = 0;
 
 // Filtered measurements shall be kept as global variables; raw data will be kept local to save memory
 float altitude_filtered, velocity_filtered, acceleration_filtered;
@@ -143,8 +159,10 @@ float previous_velocity_filtered = 0.0;
 bool launched, landed;
 unsigned long launch_time;
 unsigned long land_time = 0;
-// float gravity_normal_vector[3] = {0.0, 0.0, 0.0};
 
+// Kalman filter stuff
+BLA::Matrix<NumObservations> obs; // observation vector
+KALMAN<NumStates,NumObservations> KalmanFilter; // Kalman filter
 
 
 // Entry point to the program
@@ -171,6 +189,25 @@ void setup() {
         Serial.println("Sensor setup failed. Aborting.");
         LEDError();
     }
+
+    // Setup Kalman filter stuff
+    // Time evolution matrix
+    KalmanFilter.F = {1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0};
+
+    // measurement matrix (first row altimeter, second row accelerometer)
+    KalmanFilter.H = {0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0};
+    // measurement covariance matrix
+    KalmanFilter.R = {AltimeterNoise*AltimeterNoise,   0.0,
+            0.0, IMUNoise*IMUNoise};
+    // model covariance matrix
+    KalmanFilter.Q = {m_p*m_p,     0.0,     0.0,
+                0.0, m_s*m_s,     0.0,
+                0.0,     0.0, m_a*m_a};
+
+    obs.Fill(0.0);
 
     // Test the ATS
     testATS();
@@ -251,7 +288,7 @@ void run_timer() {
     }
     curr_time = millis();
     timer = curr_time - start_time;
-    loop_time = curr_time - prev_loop_time;
+    loop_time_delta = curr_time - prev_loop_time;
     // Serial.println(loop_time);
     prev_loop_time = curr_time;
 }
@@ -384,9 +421,25 @@ String getMeasurements() {
 // Filter raw data and store it in global variables; still need to implement
 void filterData(float alt, float acc) {
 
-    altitude_filtered = alt;
-    velocity_filtered = (altitude_filtered - previous_velocity_filtered) / (loop_time/1000);
-    acceleration_filtered = acc;
+    float DT = ((float)loop_time_delta)/1000;
+    KalmanFilter.F = {1.0,  DT,  DT*DT/2,
+		 0.0, 1.0,       DT,
+         0.0, 0.0,      1.0};
+    obs(0) = alt;
+    obs(1) = acc;
+    KalmanFilter.update(obs);
+    altitude_filtered = KalmanFilter.x(0);
+    velocity_filtered = KalmanFilter.x(1);
+    acceleration_filtered = KalmanFilter.x(2);
+
+
+    // NO FILTER vvvvvv
+    // altitude_filtered = alt;
+    // velocity_filtered = (altitude_filtered - previous_velocity_filtered) / (loop_time/1000);
+    // acceleration_filtered = acc;
+
+
+    // OLD FILTER vvvvvv
 
     // // Low pass filter: if data is sus, extrapolate from previous data instead
     // if (abs(alt - altitude_filtered) < 100) {
