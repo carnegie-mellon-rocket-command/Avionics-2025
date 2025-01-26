@@ -446,3 +446,19 @@ void adjustATS() {
         setATSPosition(ats_position);
     }
 }
+
+void testATS() {
+}
+
+void attachATS() {
+}
+
+void LEDLogging() {
+}
+
+void LEDSuccess() {
+}
+
+void LEDError() {
+}
+
