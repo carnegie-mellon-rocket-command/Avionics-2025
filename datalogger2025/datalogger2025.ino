@@ -99,7 +99,7 @@ const int loop_target = 25;
 #endif
 
 // Acceleration threshold for launch detection (ft/s^2)
-const float accel_threshold = 20.0f;
+const float accel_threshold = 35.0f;
 // Velocity threshold for landing detection (ft/s)
 const float velocity_threshold = 0.1f;
 
@@ -108,9 +108,9 @@ const float velocity_threshold = 0.1f;
 const int ats_pin = 6;
 const int LED_pin = LED_BUILTIN;
 // const int IMU_chip_select = 9;    // SOX
-const int altimeter_chip_select = 1;     // BMP
+const int altimeter_chip_select = 10;     // BMP
 // We shouldn't need to define these we use the dedicated hardware SPI pins
-// const int MIS0 = 12;
+// const int MISO = 12;
 // const int MOSI = 11;
 // const int SCK = 13;
 
@@ -123,7 +123,7 @@ const int ats_max = 78;
 
 
 // SD CARD PARAMETERS
-const int chip_select = 0;
+const int chip_select = BUILTIN_SDCARD;
 bool sd_active = false;
 String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 
@@ -213,6 +213,8 @@ void setup() {
     testATS();
 
     pinMode(LED_pin, OUTPUT);
+    digitalWrite(LED_pin, HIGH);
+    return;
     start_time = millis();
     Serial.println("Arduino is ready!");
 }
@@ -252,6 +254,7 @@ void loop() {
 
         // If the rocket has launched, adjust the ATS as necessary, and detect whether the rocket has landed
         if (launched) {
+            LEDFlying();
             adjustATS();
 
             if (detectLanding()) {
@@ -619,12 +622,12 @@ void adjustATS() {
 
 // Test the ATS: fully extend and retract it, then detach the servo to save power
 void testATS() {
-    attachATS();
-    setATSPosition(1.0f);  // Initial position
-    delay(2000);
-    setATSPosition(0.0f);  // Reset position
-    delay(2000);
-    detachATS();
+    // attachATS();
+    // setATSPosition(1.0f);  // Initial position
+    // delay(2000);
+    // setATSPosition(0.0f);  // Reset position
+    // delay(2000);
+    // detachATS();
 }
 
 
@@ -652,6 +655,9 @@ void LEDError() {
     }
 }
 
+void LEDFlying() {
+    digitalWrite(LED_pin, HIGH);
+}
 
 // If in simulation mode, update simulated sensor values from serial bus
 #if SIMULATE
