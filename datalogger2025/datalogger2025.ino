@@ -170,6 +170,8 @@ KALMAN<NumStates,NumObservations> KalmanFilter; // Kalman filter
 void setup() {
     Serial.begin(115200);
     Serial.println("Initializing...");
+    pinMode(LED_pin, OUTPUT);
+    digitalWrite(LED_pin, HIGH);
 
 
     #if SIMULATE
@@ -189,6 +191,8 @@ void setup() {
         Serial.println("Sensor setup failed. Aborting.");
         LEDError();
     }
+    bmp.performReading();
+    Serial.println("Right after setup");
 
     // Setup Kalman filter stuff
     // Time evolution matrix
@@ -210,10 +214,14 @@ void setup() {
     obs.Fill(0.0);
 
     // Test the ATS
+    bmp.performReading();
+    Serial.println("Before ATS test");
     testATS();
+    bmp.performReading();
+    Serial.println("After ATS test");
 
-    pinMode(LED_pin, OUTPUT);
-    digitalWrite(LED_pin, HIGH);
+    bmp.performReading();
+    Serial.println("End of setup reached");
     return;
     start_time = millis();
     Serial.println("Arduino is ready!");
@@ -224,6 +232,7 @@ void setup() {
 // Will measure data, filter it, and write it to the SD card from when the rocket launches until it lands
 void loop() {
     buffer = "";
+    bmp.performReading();
 
     for (int i = 0; i < buffer_size; i++) {
 
@@ -231,6 +240,7 @@ void loop() {
         run_timer();
 
         // Get measurements from sensors and add them to the buffer
+        bmp.performReading();
         buffer += getMeasurements();
         buffer += "\n";
 
@@ -367,8 +377,10 @@ bool setupSensors() {
     return true;
   #endif
 
-  if (setupBMP3XX() && setupLSM6DSOX()) {
+  if (setupLSM6DSOX() && setupBMP3XX()) {
     if (DEBUG) {Serial.println("Sensors initialized successfully!");}
+    bmp.performReading();
+    Serial.println("Setup reading fine");
     return true;
   }
   return false;
@@ -380,6 +392,13 @@ bool setupBMP3XX() {
     Serial.println("Unable to connect to altimeter");
     return false;
   }
+  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  bmp.setOutputDataRate(BMP3_ODR_50_HZ);
+  Serial.println("Altimeter good");
+  bmp.performReading();
+  Serial.print(bmp.readAltitude(SEALEVELPRESSURE_HPA));
   return true;
 }
 
@@ -404,6 +423,7 @@ String getMeasurements() {
 
     float altitude_raw, acceleration_raw;
 
+    bmp.performReading();
     updateAltimeter();
     updateIMU();
     altitude_raw = readAltimeter();
@@ -416,7 +436,7 @@ String getMeasurements() {
     String time_data = String(millis() - start_time);
 
     String sensor_data = String(readThermometer());
-    // Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position));
+    Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position));
     return time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position);
 }
 
