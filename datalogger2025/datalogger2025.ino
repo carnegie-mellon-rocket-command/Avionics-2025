@@ -26,7 +26,7 @@ Made by the 2025 Avionics team :D
 
 // ***************** LIBRARIES *****************
 
-#include <Servo.h>
+#include <PWMServo.h>
 #include <SD.h>
 
 // sensor libraries
@@ -116,7 +116,7 @@ const int altimeter_chip_select = 10;     // BMP
 
 
 // ATS SERVO PARAMETERS
-Servo ATS_servo;
+PWMServo ATS_servo;
 float ats_position = 0.0f;
 const int ats_min = 0;
 const int ats_max = 78;
