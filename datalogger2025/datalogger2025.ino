@@ -89,7 +89,7 @@ using namespace BLA;
 const bool DEBUG = true;
 
 // How frequently data should be collected (in milliseconds)
-const int loop_target = 25;
+const int loop_target = 30;
 
 // Target altitude in feet
 #if SUBSCALE
@@ -221,10 +221,9 @@ void setup() {
     Serial.println("After ATS test");
 
     bmp.performReading();
-    Serial.println("End of setup reached");
-    return;
     start_time = millis();
     Serial.println("Arduino is ready!");
+    LEDSuccess();
 }
 
 
