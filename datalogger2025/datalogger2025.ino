@@ -59,7 +59,7 @@ using namespace BLA;
 // Whether we are flying the subscale rocket or not (different altitiude target)
 #define SUBSCALE true
 
-#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
+#define SKIP_ATS true    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define METERS_TO_FEET 3.28084
@@ -163,7 +163,7 @@ unsigned long land_time = 0;
 // Kalman filter stuff
 BLA::Matrix<NumObservations> obs; // observation vector
 KALMAN<NumStates,NumObservations> KalmanFilter; // Kalman filter
-
+BLA::Matrix<NumStates> measurement_state;
 
 // Entry point to the program
 // Initializes all sensors and devices, and briefly tests the ATS
@@ -201,8 +201,8 @@ void setup() {
             0.0, 0.0, 1.0};
 
     // measurement matrix (first row altimeter, second row accelerometer)
-    KalmanFilter.H = {0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0};
+    KalmanFilter.H = {1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0};
     // measurement covariance matrix
     KalmanFilter.R = {AltimeterNoise*AltimeterNoise,   0.0,
             0.0, IMUNoise*IMUNoise};
@@ -212,6 +212,7 @@ void setup() {
                 0.0,     0.0, m_a*m_a};
 
     obs.Fill(0.0);
+    measurement_state.Fill(0.0);
 
     // Test the ATS
     bmp.performReading();
@@ -435,24 +436,37 @@ String getMeasurements() {
     String time_data = String(millis() - start_time);
 
     String sensor_data = String(readThermometer());
-    Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position));
+    // Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position));
     return time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position);
 }
 
 
 // Filter raw data and store it in global variables; still need to implement
 void filterData(float alt, float acc) {
-
     float DT = ((float)loop_time_delta)/1000;
+
+    Serial.println("Raw Altitude: " + String(alt) + " Raw Acceleration: " + String(acc) + " DT:" + String(DT));
+
     KalmanFilter.F = {1.0,  DT,  DT*DT/2,
 		 0.0, 1.0,       DT,
          0.0, 0.0,      1.0};
-    obs(0) = alt;
-    obs(1) = acc;
+
+    measurement_state(0) = (double)alt;
+    measurement_state(1) = (double)0.0;
+    measurement_state(2) = (double)acc;
+
+    // Serial << measurement_state << "\n";
+    obs = KalmanFilter.H * measurement_state;
+    Serial << measurement_state << "\n";
+    Serial << obs << "\n";
     KalmanFilter.update(obs);
+    // BLA::Matrix<NumObservations, 3> current_obs = {alt, 0.0, 0.0,
+    //                                             0.0, 0.0, acc};
+    // KalmanFilter.update(current_obs);
     altitude_filtered = KalmanFilter.x(0);
     velocity_filtered = KalmanFilter.x(1);
     acceleration_filtered = KalmanFilter.x(2);
+    Serial.println("Filtered Altitude: " + String(altitude_filtered) + " Filtered Velocity: " + String(velocity_filtered) + " Filtered Acceleration: " + String(acceleration_filtered));
 
 
     // NO FILTER vvvvvv
@@ -641,12 +655,12 @@ void adjustATS() {
 
 // Test the ATS: fully extend and retract it, then detach the servo to save power
 void testATS() {
-    // attachATS();
-    // setATSPosition(1.0f);  // Initial position
-    // delay(2000);
-    // setATSPosition(0.0f);  // Reset position
-    // delay(2000);
-    // detachATS();
+    attachATS();
+    setATSPosition(1.0f);  // Initial position
+    delay(2000);
+    setATSPosition(0.0f);  // Reset position
+    delay(2000);
+    detachATS();
 }
 
 
