@@ -16,6 +16,8 @@ SPI pins are the default hardware SPI pins on the Teensy 4.1 (MISO = 12, MOSI = 
 The Kalman library needs the BasicLinearAlgebra library version 3.7.0 or before to run for some reason, otherwise it won't compile!!!
 (If you get an "array does not name a type" error, the version is too recent)
 
+If you receive problems with the Servo library, do not listen to its lies and instead just uninstall the default Servo library (???)
+
 DEBUGGING: if the onboard LED flashes rapidly a few times, then stays on, everything has been initialized correctly. If the LED blinks slowly, there is an error with the SD card or one of the sensors.
 
 More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2ky337JQ54YeVqc5DDVWyw8OYpTEvQ4oI/edit
@@ -66,9 +68,9 @@ using namespace BLA;
 #define METERS_TO_FEET 3.28084
 
 #define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
-#define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
+#define ROCKET_DRAG_COEFFICIENT 0.45f   // Average value from OpenRocket
 #define ROCKET_CROSS_SECTIONAL_AREA 0.08814130888f // The surface area (ft^2) of the rocket facing upwards     
-#define ROCKET_MASS 19.5625f // lbs in wet mass
+#define ROCKET_MASS 19.5625f // lbs in wet mass (with engine housing but NOT propellant)
 #define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended  
 #define g 32.174f // ft/s^2
 
