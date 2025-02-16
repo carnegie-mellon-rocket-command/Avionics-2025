@@ -66,11 +66,16 @@ using namespace BLA;
 #define METERS_TO_FEET 3.28084f
 
 #define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
-#define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
-#define ROCKET_CROSS_SECTIONAL_AREA 0.08814130888f // The surface area (ft^2) of the rocket facing upwards     
-#define ROCKET_MASS 19.5625f // lbs in wet mass
+#define ROCKET_DRAG_COEFFICIENT 0.46f   // Average value from OpenRocket
+#define ROCKET_CROSS_SECTIONAL_AREA 0.08814130888f // The surface area (ft^2) of the rocket facing upwards
+#if SUBSCALE
+    #define ROCKET_MASS 13.35f // lbs in dry mass (with engine housing but NOT propellant, assuming no ballast)
+#else
+    #define ROCKET_MASS 17.8125f // lbs in dry mass (with engine housing but NOT propellant, assuming no ballast)
+#endif
 #define MAX_FLAP_SURFACE_AREA = 0.02930555555f
-#define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended  
+// #define ROCKET_MASS 19.5625f // lbs in dry mass (with engine housing but NOT propellant)
+#define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended, including rocket's area
 #define g 32.174f // ft/s^2
 #define TARGET_ACCELERATION -43.42135f
 // Kalman filter parameters
@@ -95,13 +100,13 @@ const int loop_target = 30;
 
 // Target altitude in feet
 #if SUBSCALE
-    const float alt_target = 2000.0f;
+    const float alt_target = 2000.0f; // ft
 #else
-    const float alt_target = 5000.0f;
+    const float alt_target = 4500.0f; // ft
 #endif
 
 // Acceleration threshold for launch detection (ft/s^2)
-const float accel_threshold = 35.0f;
+const float accel_threshold = 2*g;
 // Velocity threshold for landing detection (ft/s)
 const float velocity_threshold = 0.1f;
 
@@ -448,8 +453,6 @@ String getMeasurements() {
 void filterData(float alt, float acc) {
     float DT = ((float)loop_time_delta)/1000;
 
-    Serial.println("Raw Altitude: " + String(alt) + " Raw Acceleration: " + String(acc) + " DT:" + String(DT));
-
     KalmanFilter.F = {1.0,  DT,  DT*DT/2,
 		 0.0, 1.0,       DT,
          0.0, 0.0,      1.0};
@@ -458,10 +461,7 @@ void filterData(float alt, float acc) {
     measurement_state(1) = (double)0.0;
     measurement_state(2) = (double)acc;
 
-    // Serial << measurement_state << "\n";
     obs = KalmanFilter.H * measurement_state;
-    Serial << measurement_state << "\n";
-    Serial << obs << "\n";
     KalmanFilter.update(obs);
     // BLA::Matrix<NumObservations, 3> current_obs = {alt, 0.0, 0.0,
     //                                             0.0, 0.0, acc};
@@ -469,7 +469,8 @@ void filterData(float alt, float acc) {
     altitude_filtered = KalmanFilter.x(0);
     velocity_filtered = KalmanFilter.x(1);
     acceleration_filtered = KalmanFilter.x(2);
-    Serial.println("Filtered Altitude: " + String(altitude_filtered) + " Filtered Velocity: " + String(velocity_filtered) + " Filtered Acceleration: " + String(acceleration_filtered));
+    Serial << altitude_raw << "," << acceleration_raw "," << altitude_filtered << "," << velocity_filtered << "," << acceleration_filtered;
+    // Serial.println("Filtered Altitude: " + String(altitude_filtered) + " Filtered Velocity: " + String(velocity_filtered) + " Filtered Acceleration: " + String(acceleration_filtered));
 
 
     // NO FILTER vvvvvv
@@ -565,16 +566,16 @@ bool detectLanding() {
     }
 
 
-    if (velocity_filtered < velocity_threshold) {
-        land_time = millis();
-    }
-    else {
-        land_time = 0;
-    }
+    // if (velocity_filtered < velocity_threshold) {
+    //     land_time = millis();
+    // }
+    // else {
+    //     land_time = 0;
+    // }
 
-    if (land_time != 0 && millis() - land_time > 5000) {
-        return true;
-    }
+    // if (land_time != 0 && millis() - land_time > 5000) {
+    //     return true;
+    // }
 
     return false;
 }
