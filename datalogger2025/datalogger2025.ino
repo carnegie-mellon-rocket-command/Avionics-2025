@@ -27,7 +27,7 @@ Made by the 2025 Avionics team :D
 
 // ***************** LIBRARIES *****************
 
-#include <PWMServo.h>
+#include <Servo.h>
 #include <SD.h>
 
 // sensor libraries
@@ -60,7 +60,7 @@ using namespace BLA;
 // Whether we are flying the subscale rocket or not (different altitiude target)
 #define SUBSCALE true
 
-#define SKIP_ATS true    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
+#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define METERS_TO_FEET 3.28084
@@ -69,7 +69,7 @@ using namespace BLA;
 #define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
 #define ROCKET_CROSS_SECTIONAL_AREA 0.08814130888f // The surface area (ft^2) of the rocket facing upwards     
 #define ROCKET_MASS 19.5625f // lbs in wet mass
-#define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTION_AREA // The maximum surface area (ft^2) of the rocket with flaps extended  
+#define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended  
 #define g 32.174f // ft/s^2
 
 // Kalman filter parameters
@@ -117,10 +117,10 @@ const int altimeter_chip_select = 10;     // BMP
 
 
 // ATS SERVO PARAMETERS
-PWMServo ATS_servo;
+Servo ATS_servo;
 float ats_position = 0.0f;
 const int ats_min = 0;
-const int ats_max = 78;
+const int ats_max = 180;
 
 
 // SD CARD PARAMETERS
@@ -284,6 +284,7 @@ void loop() {
 
     if (landed) {
         // End the program
+        detachATS();
         if (DEBUG) {Serial.println("Rocket has landed, ending program");}
         while (true);
     }
@@ -614,7 +615,7 @@ void setATSPosition(float val) {
     #if SKIP_ATS
         return;
     #endif
-
+    val = 1.0f - val;
     float pos = (ats_max - ats_min) * val + ats_min;
     ATS_servo.write(int(pos));
     if (DEBUG) {Serial.println("ATS position set to " + String(pos));}
@@ -657,6 +658,8 @@ void adjustATS() {
 // Test the ATS: fully extend and retract it, then detach the servo to save power
 void testATS() {
     attachATS();
+    setATSPosition(0.0f);
+    delay(2000);
     setATSPosition(1.0f);  // Initial position
     delay(2000);
     setATSPosition(0.0f);  // Reset position
