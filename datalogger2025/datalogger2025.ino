@@ -16,8 +16,6 @@ SPI pins are the default hardware SPI pins on the Teensy 4.1 (MISO = 12, MOSI = 
 The Kalman library needs the BasicLinearAlgebra library version 3.7.0 or before to run for some reason, otherwise it won't compile!!!
 (If you get an "array does not name a type" error, the version is too recent)
 
-If you receive problems with the Servo library, do not listen to its lies and instead just uninstall the default Servo library (???)
-
 DEBUGGING: if the onboard LED flashes rapidly a few times, then stays on, everything has been initialized correctly. If the LED blinks slowly, there is an error with the SD card or one of the sensors.
 
 More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2ky337JQ54YeVqc5DDVWyw8OYpTEvQ4oI/edit
@@ -36,7 +34,7 @@ Made by the 2025 Avionics team :D
 #include <Adafruit_BMP3XX.h>
 #include <Adafruit_LSM6DSOX.h>
 
-#include <BasicLinearAlgebra.h>
+#include <BasicLinearAlgebra.h> //version 3.7
 #include <Kalman.h>
 
 
@@ -65,15 +63,16 @@ using namespace BLA;
 #define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
 
 #define SEALEVELPRESSURE_HPA (1013.25)
-#define METERS_TO_FEET 3.28084
+#define METERS_TO_FEET 3.28084f
 
 #define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
-#define ROCKET_DRAG_COEFFICIENT 0.45f   // Average value from OpenRocket
+#define ROCKET_DRAG_COEFFICIENT 0.75f   // TODO: figure out actual value
 #define ROCKET_CROSS_SECTIONAL_AREA 0.08814130888f // The surface area (ft^2) of the rocket facing upwards     
-#define ROCKET_MASS 19.5625f // lbs in wet mass (with engine housing but NOT propellant)
+#define ROCKET_MASS 19.5625f // lbs in wet mass
+#define MAX_FLAP_SURFACE_AREA = 0.02930555555f
 #define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended  
 #define g 32.174f // ft/s^2
-
+#define TARGET_ACCELERATION -43.42135f
 // Kalman filter parameters
 #define NumStates 3
 #define NumObservations 2
@@ -649,16 +648,17 @@ void adjustATS() {
     else {
         // Calculate how wide to make the rocket so its hits its target altitude
         // 0 = 583.99^2 + 2 * a * 3927.15
-        a = -43.42135
         // float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         // Adjust the ATS based on the target area
-        alt = readAltitude();
-        error = alt - a // positive if we need to deploy more flaps
-        adjustment = pid_factor(error, 0.1,0)
+        //drag force
+        float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2f);
+        float inst_acceleration = Fd/ROCKET_MASS;
+        float error = acceleration_filtered - inst_acceleration - TARGET_ACCELERATION; // positive if we need to deploy more flap
+        float adjustment = pid_factor(error, 0.1,0);
 
         // target_area -= ROCKET_CROSS_SECTIONAL_AREA;
         // ats_position = target_area/ATS_MAX_SURFACE_AREA;
-        ats_position = adjustment/ATS_MAX_SURFACE_AREA
+        ats_position = adjustment/ATS_MAX_SURFACE_AREA;
     }
 
     // // This is last year's code to adjust the ATS; might need to be changed a bit
@@ -775,3 +775,4 @@ String getSimulatedMeasurements() {
         return time_data + "," + movement_data + "," + sensor_data + "," + ats_position;
 }
 #endif
+
