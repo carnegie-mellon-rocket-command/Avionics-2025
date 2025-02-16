@@ -621,6 +621,18 @@ void setATSPosition(float val) {
     if (DEBUG) {Serial.println("ATS position set to " + String(pos));}
 }
 
+float pid_factor(int error, float Kp, float Kd)
+{
+  static int old_error = 0;
+
+  float proportional = error * Kp;
+
+  float derivative = (error - old_error) * Kd;
+  old_error = error;
+
+  return proportional + derivative; 
+}
+
 // Adjust the ATS based on the current altitude and desired apogee
 void adjustATS() {
     if (millis() - launch_time > 18000) {
@@ -634,10 +646,17 @@ void adjustATS() {
     }
     else {
         // Calculate how wide to make the rocket so its hits its target altitude
-        float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        // 0 = 583.99^2 + 2 * a * 3927.15
+        a = -43.42135
+        // float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         // Adjust the ATS based on the target area
-        target_area -= ROCKET_CROSS_SECTIONAL_AREA;
-        ats_position = target_area/ATS_MAX_SURFACE_AREA;
+        alt = readAltitude();
+        error = alt - a // positive if we need to deploy more flaps
+        adjustment = pid_factor(error, 0.1,0)
+
+        // target_area -= ROCKET_CROSS_SECTIONAL_AREA;
+        // ats_position = target_area/ATS_MAX_SURFACE_AREA;
+        ats_position = adjustment/ATS_MAX_SURFACE_AREA
     }
 
     // // This is last year's code to adjust the ATS; might need to be changed a bit
