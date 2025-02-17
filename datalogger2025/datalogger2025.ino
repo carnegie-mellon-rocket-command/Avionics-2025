@@ -60,7 +60,7 @@ using namespace BLA;
 // Whether we are flying the subscale rocket or not (different altitiude target)
 #define SUBSCALE true
 
-#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
+#define SKIP_ATS true    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define METERS_TO_FEET 3.28084f
@@ -73,11 +73,11 @@ using namespace BLA;
 #else
     #define ROCKET_MASS 17.8125f // lbs in dry mass (with engine housing but NOT propellant, assuming no ballast)
 #endif
-#define MAX_FLAP_SURFACE_AREA = 0.02930555555f
+#define MAX_FLAP_SURFACE_AREA 0.02930555555f
 // #define ROCKET_MASS 19.5625f // lbs in dry mass (with engine housing but NOT propellant)
 #define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended, including rocket's area
 #define g 32.174f // ft/s^2
-#define TARGET_ACCELERATION -43.42135f
+#define TARGET_ACCELERATION -32.0f
 // Kalman filter parameters
 #define NumStates 3
 #define NumObservations 2
@@ -469,7 +469,7 @@ void filterData(float alt, float acc) {
     altitude_filtered = KalmanFilter.x(0);
     velocity_filtered = KalmanFilter.x(1);
     acceleration_filtered = KalmanFilter.x(2);
-    Serial << altitude_raw << "," << acceleration_raw "," << altitude_filtered << "," << velocity_filtered << "," << acceleration_filtered;
+    Serial << alt << "," << acc <<"," << altitude_filtered << "," << velocity_filtered << "," << acceleration_filtered << "\n";
     // Serial.println("Filtered Altitude: " + String(altitude_filtered) + " Filtered Velocity: " + String(velocity_filtered) + " Filtered Acceleration: " + String(acceleration_filtered));
 
 
@@ -652,7 +652,7 @@ void adjustATS() {
         // float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         // Adjust the ATS based on the target area
         //drag force
-        float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2f);
+        float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2.0);
         float inst_acceleration = Fd/ROCKET_MASS;
         float error = acceleration_filtered - inst_acceleration - TARGET_ACCELERATION; // positive if we need to deploy more flap
         float adjustment = pid_factor(error, 0.1,0);
