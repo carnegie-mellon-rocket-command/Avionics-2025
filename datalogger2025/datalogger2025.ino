@@ -132,7 +132,11 @@ const int ats_max = 180;
 
 
 // SD CARD PARAMETERS
-const int chip_select = BUILTIN_SDCARD;
+#if SUBSCALE
+  const int chip_select = 0;
+#else
+  const int chip_select = BUILTIN_SDCARD;
+#endif
 bool sd_active = false;
 String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 
