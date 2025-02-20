@@ -656,12 +656,14 @@ void adjustATS() {
         //drag force
         float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2.0);
         float inst_acceleration = Fd/ROCKET_MASS;
-        float error = acceleration_filtered - inst_acceleration - TARGET_ACCELERATION; // positive if we need to deploy more flap
-        float adjustment = pid_factor(error, 0.1,0);
+        float error = acceleration_filtered - TARGET_ACCELERATION; // positive if we need to deploy more flap
+        // error should be in a range of (-30,30) ish? guessing the lower bound but upper bound is 32.1740 ft/s2
+        float adjustment = pid_factor(error, 0.015,0); // should normalize to -0.5 to 0.5
+        adjustment += 0.5
 
         // target_area -= ROCKET_CROSS_SECTIONAL_AREA;
         // ats_position = target_area/ATS_MAX_SURFACE_AREA;
-        ats_position = adjustment/ATS_MAX_SURFACE_AREA;
+        ats_position = adjustment;
     }
 
     // // This is last year's code to adjust the ATS; might need to be changed a bit
