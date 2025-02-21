@@ -60,9 +60,9 @@ using namespace BLA;
 // ***************** CONSTANTS AND UNITS (in IPS) *****************
 
 // Whether we are flying the subscale rocket or not (different altitiude target)
-#define SUBSCALE true
+#define SUBSCALE false
 
-#define SKIP_ATS true    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
+#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 #define METERS_TO_FEET 3.28084f
@@ -79,7 +79,7 @@ using namespace BLA;
 // #define ROCKET_MASS 19.5625f // lbs in dry mass (with engine housing but NOT propellant)
 #define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended, including rocket's area
 #define g 32.174f // ft/s^2
-#define TARGET_ACCELERATION -43.42135f
+#define TARGET_ACCELERATION 43.42135f
 // Kalman filter parameters
 #define NumStates 3
 #define NumObservations 2
@@ -475,7 +475,8 @@ void filterData(float alt, float acc) {
     altitude_filtered = KalmanFilter.x(0);
     velocity_filtered = KalmanFilter.x(1);
     acceleration_filtered = KalmanFilter.x(2);
-    Serial << alt << "," << acc <<"," << altitude_filtered << "," << velocity_filtered << "," << acceleration_filtered << "\n";
+    // Serial << alt << "," << acc <<"," << altitude_filtered << "," << velocity_filtered << "," << acceleration_filtered << "\n";
+    Serial << acceleration_filtered << "\n";
     // Serial.println("Filtered Altitude: " + String(altitude_filtered) + " Filtered Velocity: " + String(velocity_filtered) + " Filtered Acceleration: " + String(acceleration_filtered));
 
 
@@ -655,15 +656,20 @@ void adjustATS() {
     else {
         // Calculate how wide to make the rocket so its hits its target altitude
         // 0 = 583.99^2 + 2 * a * 3927.15
-        // float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        Serial.println("Old ATS pos: " + String(target_area/ATS_MAX_SURFACE_AREA));
         // Adjust the ATS based on the target area
         //drag force
-        float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2.0);
-        float inst_acceleration = Fd/ROCKET_MASS;
-        float error = acceleration_filtered - TARGET_ACCELERATION; // positive if we need to deploy more flap
-        // error should be in a range of (-30,30) ish? guessing the lower bound but upper bound is 32.1740 ft/s2
-        float adjustment = pid_factor(error, 0.015,0); // should normalize to -0.5 to 0.5
-        adjustment += 0.5
+        // float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2.0);
+        // float inst_acceleration = Fd/ROCKET_MASS;
+        float error = acceleration_filtered - TARGET_ACCELERATION; // positive if drag + gravity >= target, means if <, we are going TOO FAST and need to slow down
+        // if error < 0, deploy, else, its fine
+        if (error > 0){
+          error = 0;
+        } else {
+          error = abs(error);
+        }
+        float adjustment = pid_factor(error, 0.03,0); // should normalize to 0 to 1
 
         // target_area -= ROCKET_CROSS_SECTIONAL_AREA;
         // ats_position = target_area/ATS_MAX_SURFACE_AREA;
@@ -682,6 +688,7 @@ void adjustATS() {
     if (millis() - launch_time > 4500) {
         // Adjust ATS based on position
         setATSPosition(ats_position);
+        Serial.println("ATS position: " + String(ats_position));
     }
 }
 
