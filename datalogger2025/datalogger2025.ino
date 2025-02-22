@@ -40,6 +40,10 @@ Made by the 2025 Avionics team :D
 #include <Kalman.h>
 
 
+// Whether we are flying the subscale rocket or not (different altitiude target)
+// ⚠⚠⚠ VERY IMPORTANT: Don't forget to set this correctly before uploading to the corresponding ATS
+#define SUBSCALE false
+
 // ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
 // Don't forget to set to false before launch!!!!!
 #define SIMULATE false
@@ -58,9 +62,6 @@ using namespace BLA;
 
 
 // ***************** CONSTANTS AND UNITS (in IPS) *****************
-
-// Whether we are flying the subscale rocket or not (different altitiude target)
-#define SUBSCALE false
 
 #define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
 
@@ -116,8 +117,11 @@ const float velocity_threshold = 0.1f;
 // PIN DEFINITIONS
 const int ats_pin = 6;
 const int LED_pin = LED_BUILTIN;
-// const int IMU_chip_select = 9;    // SOX
-const int altimeter_chip_select = 10;     // BMP
+#if SUBSCALE
+    const int altimeter_chip_select = 1;     // BMP
+#else
+    const int altimeter_chip_select = 10;     // BMP
+#endif
 // We shouldn't need to define these we use the dedicated hardware SPI pins
 // const int MISO = 12;
 // const int MOSI = 11;
@@ -138,8 +142,11 @@ const int ats_max = 180;
   const int chip_select = BUILTIN_SDCARD;
 #endif
 bool sd_active = false;
-String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
-
+#if SUBSCALE
+    String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
+#else
+    String file_name = "fullsc_1.txt";
+#endif
 
 // SENSOR OBJECTS
 
