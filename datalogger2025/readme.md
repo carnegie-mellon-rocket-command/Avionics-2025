@@ -1,12 +1,7 @@
-# CMRC 2025 Avionics Code
+# Avionics 2025
+Flight control software for the 2025 ATS.
 
-This repository contains the code to collect and log flight data, transmit it via radio at the appropriate time, and deploy the rocket's ATS to help it reach its desired altitude.
-
-The previous year's sketch is located in the `datalogger` directory, while the outline of a new one is located in `datalogger2025`
-
-**PSA: please check that the code compiles before making a commit** (put it into Arduino IDE and press "✔️" button). Thanks :D
-
-## Overview (datalogger 2025)
+## Overview
 The program controls an ATS that increases surface area using PID to adjusts drag in based on real time measurements to achieve a target altitude. It uses:
 - IMU/Accelerometer (LSM6DSOX, 9, SPI)
 - Altimeter (BMP390, 8, SPI)

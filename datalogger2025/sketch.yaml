@@ -21,3 +21,21 @@ profiles:
       parity: none
       stopbits: 1
     protocol: serial
+
+
+
+personal notes
+
+bmp.perform_reading -- update temperature and pressure of  (public attributes of bmp obj)
+1. do this before using other bmp functions or variables
+
+getEvent(&accel, &gyro, &temp);  
+1. we use 3 sensor_event_t structs for clarity and ease of pointers even though we won't see all attributes
+   and we can technically accomplish this with 1 sensor_event_t
+
+To ask
+
+we can't tell difference between `ledlogging` and `ledflying`
+1. do we want to normalize acceleration or not? `readIMU`
+2. details on `setatsposition`
+3. do we want to move the ats back inside before detaching?
