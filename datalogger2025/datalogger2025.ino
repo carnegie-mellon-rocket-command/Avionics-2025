@@ -145,7 +145,7 @@ bool sd_active = false;
 #if SUBSCALE
     String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 #else
-    String file_name = "fullsc_1.txt";
+    String file_name = "VDF_full.txt";
 #endif
 
 // SENSOR OBJECTS
@@ -371,7 +371,7 @@ void writeData(String text) {
     #endif
 
     if (sd_active) {
-        File data_file = SD.open("subscl_1.txt", FILE_WRITE);
+        File data_file = SD.open(file_name, FILE_WRITE);
         if (data_file) {
             if (DEBUG) {Serial.println("Writing to SD card!");}
             data_file.print(text);
@@ -380,7 +380,7 @@ void writeData(String text) {
             // Could leave this out so the program tries to keep logging data even if it fails once
             // sd_active = false;
 
-            Serial.println("Error opening subscl_1.txt");
+            Serial << "Error opening file " << file_name << "\n";
         }
     } else {
         // If the SD card has not connected successfully
