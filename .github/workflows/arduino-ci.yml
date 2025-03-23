@@ -36,8 +36,6 @@ jobs:
           arduino-cli lib install "BasicLinearAlgebra@3.7.0"
           arduino-cli lib install "Dictionary@3.5.0"
           # arduino-cli lib install "Servo@1.2.2" "SD@1.3.0"
-          arduino-cli lib install "SD@1.3.0"
-
 
       - name: Compile All Sketches
         run: |
