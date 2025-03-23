@@ -91,7 +91,6 @@ using namespace BLA;
 #define m_s 0.1
 #define m_a 0.8
 
-
 // ***************** GLOBALS *****************
 
 // FLIGHT PARAMETERS
@@ -113,6 +112,8 @@ const float accel_threshold = 2*g;
 // Velocity threshold for landing detection (ft/s)
 const float velocity_threshold = 0.1f;
 
+//Predicted altitude
+float predicted_altitude = 0.0f;
 
 // PIN DEFINITIONS
 const int ats_pin = 6;
@@ -457,8 +458,8 @@ String getMeasurements() {
     String time_data = String(millis() - start_time);
 
     String sensor_data = String(readThermometer());
-    // Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position));
-    return time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position);
+    // Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position)) + "," + String(predicted_altitude);
+    return time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position) + "," + String(predicted_altitude);
 }
 
 
@@ -677,7 +678,8 @@ void adjustATS() {
           error = abs(error);
         }
         float adjustment = pid_factor(error, 0.03,0); // should normalize to 0 to 1
-
+        
+        predicted_altitude = (0.5*ROCKET_MASS*pow(velocity_filtered, 2))/(ROCKET_MASS*g + 0.5*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT*pow(velocity_filtered,2)*ATS_MAX_SURFACE_AREA*adjustment);
         // target_area -= ROCKET_CROSS_SECTIONAL_AREA;
         // ats_position = target_area/ATS_MAX_SURFACE_AREA;
         ats_position = adjustment;
