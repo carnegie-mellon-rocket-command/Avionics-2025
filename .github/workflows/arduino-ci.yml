@@ -40,6 +40,6 @@ jobs:
       - name: Compile All Sketches
         run: |
           for sketch in $(find . -name '*.ino'); do
-            arduino-cli compile --fqbn Seeeduino:samd:seeed_XIAO_m0 "$sketch"
+            arduino-cli compile --fqbn teensy:avr:teensy41 "$sketch"
           done
 
