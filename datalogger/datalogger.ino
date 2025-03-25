@@ -29,7 +29,7 @@
 #include <Adafruit_BNO055.h>
 #include <Adafruit_Sensor.h>
 
-const int BUILTIN_SDCARD = 0;
+// const int BUILTIN_SDCARD = 0;
 
 // Constants
 const int chip_select = BUILTIN_SDCARD;      // SD card chip select pin.  NOTE: We may need to change this if we are no longer using the "Teensy 4.1"
