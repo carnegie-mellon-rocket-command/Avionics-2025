@@ -144,9 +144,9 @@ const int ats_max = 180;
 #endif
 bool sd_active = false;
 #if SUBSCALE
-    String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
+    char file_name[] = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 #else
-    String file_name = "VDF_full.txt";
+    char file_name[] = "VDF_full.txt";
 #endif
 
 // SENSOR OBJECTS
