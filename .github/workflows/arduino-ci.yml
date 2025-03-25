@@ -39,8 +39,9 @@ jobs:
 
       - name: Compile All Sketches
         run: |
-          for sketch in $(find . -name '*.ino'); do
-            arduino-cli compile --fqbn teensy:avr:teensy41 "$sketch"
-            # arduino-cli compile --fqbn Seeeduino:samd:seeed_XIAO_m0 "$sketch"
-          done
+          # for sketch in $(find . -name '*.ino'); do
+          #   arduino-cli compile --fqbn teensy:avr:teensy41 "$sketch"
+          #   # arduino-cli compile --fqbn Seeeduino:samd:seeed_XIAO_m0 "$sketch"
+          # done
+          arduino-cli compile --fqbn teensy:avr:teensy41 "datalogger2025/datalogger2025.ino"
 
