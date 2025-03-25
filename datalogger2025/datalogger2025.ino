@@ -486,45 +486,6 @@ void FilterData(float alt, float acc) {
     // Serial << alt << "," << acc <<"," << gAltFiltered << "," << gVelocityFiltered << "," << gAccelFiltered << "\n";
     Serial << gAccelFiltered << "\n";
     // Serial.println("Filtered Altitude: " + String(gAltFiltered) + " Filtered Velocity: " + String(gVelocityFiltered) + " Filtered Acceleration: " + String(gAccelFiltered));
-
-
-    // NO FILTER vvvvvv
-    // gAltFiltered = alt;
-    // gVelocityFiltered = (gAltFiltered - previous_velocity_filtered) / (loop_time/1000);
-    // gAccelFiltered = acc;
-
-
-    // OLD FILTER vvvvvv
-
-    // // Low pass filter: if data is sus, extrapolate from previous data instead
-    // if (abs(alt - gAltFiltered) < 100) {
-    //     alt = gAltFiltered + gVelocityFiltered * loop_time + 0.5 * gAccelFiltered * pow(loop_time, 2);
-    // }
-    // if (abs(acc - gAccelFiltered) < 100) {
-    //     acc = gAccelFiltered;
-    // }
-
-    // // Kalman Filter
-
-    // // Update altitude
-    // // altitude_filtered_previous = gAltFiltered; // Should update via dynamics model (TODO)
-    // altitude_filtered_previous = gAltFiltered + gVelocityFiltered * loop_time + 0.5 * gAccelFiltered * pow(loop_time, 2);
-    // cov_altitude_previous = cov_altitude_current; // Should update via dynamics model (TODO)
-
-    // gAltFiltered = altitude_filtered_previous + gain_altitude * (alt - altitude_filtered_previous);
-    // cov_altitude_current = (1 - gain_altitude) * cov_altitude_previous;
-    // gain_altitude = cov_altitude_current / (cov_altitude_current + variance_altitude);
-
-    // // Update acceleration
-    // acceleration_filtered_previous = gAccelFiltered; // Should update via dynamics model (TODO)
-    // cov_acceleration_previous = cov_acceleration_current; // Should update via dynamics model (TODO)
-
-    // gAccelFiltered = acceleration_filtered_previous + gain_acceleration * (acc - acceleration_filtered_previous);
-    // cov_acceleration_current = (1 - gain_acceleration) * cov_acceleration_previous;
-    // gain_acceleration = cov_acceleration_current / (cov_acceleration_current + variance_acceleration);
-
-    // // Interpolate velocity
-    // gVelocityFiltered = (gAltFiltered - altitude_filtered_previous) / loop_time;
 }
 
 /** @brief Detect if rocket has landed 
@@ -604,6 +565,7 @@ void setATSPosition(float percent_rot) {
  * Adjust the ATS based on the current altitude and desired apogee
  */
 void AdjustATS() {
+    float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(ALT_TARGET-gAltFiltered)))
      // Retract ATS fully after 18 seconds
     if (millis() - gLaunchTime > 18000) {
         setATSPosition(ATS_IN);
@@ -618,7 +580,7 @@ void AdjustATS() {
         float target_area = (pow(gVelocityFiltered, 2)/(ALT_TARGET - gAltFiltered) - 2*GRAVITY)*ROCKET_MASS/(gVelocityFiltered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         Serial.println("Old ATS pos: " + String(target_area/ATS_MAX_SURFACE_AREA));
         // Calculate error in acceleration
-        float error = gAccelFiltered - TARGET_ACCELERATION; // positive if drag + gravity >= target, means if <, we are going TOO FAST and need to slow down
+        float error = gAccelFiltered - targetAcceleration; // positive if drag + gravity >= target, means if <, we are going TOO FAST and need to slow down
         // calculate adjustment
         float adjustment;
         if (error > 0){ //too slow
