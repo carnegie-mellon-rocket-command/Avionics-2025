@@ -1,74 +1,53 @@
 /*
-Carnegie Schmellon Rocketry Club: Precision INstrumented Experimental Aerial Propulsion Payload for Low-altitude Exploration ("PINEAPPLE") data logger             (see what I did there lol)
-
-This sketch is designed to read data via SPI from sensors described below, smooth and filter it, and predict the rocket's apogee based on the data, adjusting the ATS system to get as close as possible to the desired altitude.
-This will also use IMU/accelerometer data to determine when the rocket has launched, and will begin logging data to an onboard SD card. The data is written in a CSV format, with each line containing both raw and filtered measurements. Additionally, when the rocket has landed, it will stop logging data.
-
-Sensor/device (model, pin #, protocol):
- - IMU/Accelerometer (LSM6DSOX, 9, SPI)
- - Altimeter (BMP390, 8, SPI)
- - Thermometer (LSM6DSOX (built in to IMU), 9, SPI)
- - ATS Servo (???, 6, Arduino Servo library)
-
-SPI pins are the default hardware SPI pins on the Teensy 4.1 (MISO = 12, MOSI = 11, SCK = 13)
-
-⚠⚠⚠⚠⚠ IMPORTANT ⚠⚠⚠⚠⚠
-The Kalman library needs the BasicLinearAlgebra library version 3.7.0 or before to run for some reason, otherwise it won't compile!!!
-(If you get an "array does not name a type" error, the version is too recent)
-
-If you receive problems with the Servo library, do not listen to its lies and instead just uninstall the default Servo library (???)
-
-DEBUGGING: if the onboard LED flashes rapidly a few times, then stays on, everything has been initialized correctly. If the LED blinks slowly, there is an error with the SD card or one of the sensors.
-
-More project details tracked at: https://docs.google.com/document/d/17LliiDlGIH2ky337JQ54YeVqc5DDVWyw8OYpTEvQ4oI/edit
+Carnegie Schmellon Rocketry Club: Precision INstrumented Experimental Aerial Propulsion Payload 
+                                  for Low-altitude Exploration ("PINEAPPLE") data logger             
+(see what I did there lol)
 
 Made by the 2025 Avionics team :D
 */
 
-
-
 // ***************** LIBRARIES *****************
-
 #include <Servo.h>
 #include <SD.h>
-
-// sensor libraries
-#include <Adafruit_BMP3XX.h>
+#include <Adafruit_BMP3XX.h> //version 1.1.2
 #include <Adafruit_LSM6DSOX.h>
-
 #include <BasicLinearAlgebra.h> //version 3.7
 #include <Kalman.h>
+#include <cassert>
 
-
-// Whether we are flying the subscale rocket or not (different altitiude target)
-// ⚠⚠⚠ VERY IMPORTANT: Don't forget to set this correctly before uploading to the corresponding ATS
+// ***************** Meta  *****************
+//⚠⚠⚠ VERY IMPORTANT ⚠⚠⚠
+// true sets subscale altitude target, false sets fullscale altitude target
 #define SUBSCALE false
 
-// ⚠⚠⚠ IMPORTANT: SIMULATE = true will NOT actually gather data, only simulate it for testing purposes ⚠⚠⚠
-// Don't forget to set to false before launch!!!!!
+// ⚠⚠⚠ IMPORTANT⚠⚠⚠ 
+//true will NOT actually gather data, only simulate it for testing purposes  
+// false will gather data, FOR LAUNCH
 #define SIMULATE false
-
 
 // Simulation mode libraries
 #if SIMULATE
     #include <Dictionary.h>
-    Dictionary *simulatedSensorValues = new Dictionary();
+    Dictionary *m_simSensorValues = new Dictionary();
 #endif
 
-
-// Magic
+// Assertions (for debugging)
+#if ENABLE_ASSERTS
+    #define requires(condition) assert(condition)
+    #define ensures(condition) assert(condition)
+#else
+    #define requires(condition) ((void)0)
+    #define ensures(condition) ((void)0)
+#endif
+// ⚠⚠⚠ Do not create variables with same name as linalg library ⚠⚠⚠ 
 using namespace BLA;
 
-
-
-// ***************** CONSTANTS AND UNITS (in IPS) *****************
-
-#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
-
-#define SEALEVELPRESSURE_HPA (1013.25)
+// ***************** UNITS (in IPS) *****************
+#define SEA_LEVEL_PRESSURE_HPA 1013.25f
 #define METERS_TO_FEET 3.28084f
-
 #define ATMOSPHERE_FLUID_DENSITY 0.076474f // lbs/ft^3
+#define GRAVITY 32.174f // ft/s^2
+// ***************** Constants *****************
 #define ROCKET_DRAG_COEFFICIENT 0.46f   // Average value from OpenRocket
 #define ROCKET_CROSS_SECTIONAL_AREA 0.08814130888f // The surface area (ft^2) of the rocket facing upwards
 #if SUBSCALE
@@ -79,7 +58,6 @@ using namespace BLA;
 #define MAX_FLAP_SURFACE_AREA 0.02930555555f
 // #define ROCKET_MASS 19.5625f // lbs in dry mass (with engine housing but NOT propellant)
 #define ATS_MAX_SURFACE_AREA 0.02930555555 + ROCKET_CROSS_SECTIONAL_AREA // The maximum surface area (ft^2) of the rocket with flaps extended, including rocket's area
-#define g 32.174f // ft/s^2
 #define TARGET_ACCELERATION 43.42135f
 // Kalman filter parameters
 #define NumStates 3
@@ -90,52 +68,44 @@ using namespace BLA;
 #define m_p 0.1
 #define m_s 0.1
 #define m_a 0.8
-
 // ***************** GLOBALS *****************
-
+#define SKIP_ATS false    // whether the rocket is NOT running ATS, so don't try to mount servos, etc.
+#define ENABLE_ASSERTS true
 // FLIGHT PARAMETERS
 // Whether to print debugging messages to the serial monitor (even if SIMULATE is off)
 const bool DEBUG = true;
 
 // How frequently data should be collected (in milliseconds)
-const int loop_target = 30;
+const int LOOP_TARGET_MS = 30;
 
 // Target altitude in feet
 #if SUBSCALE
-    const float alt_target = 2000.0f; // ft
+    const float ALT_TARGET = 2000.0f; // ft
 #else
-    const float alt_target = 4500.0f; // ft
+    const float ALT_TARGET = 4500.0f; // ft above launch pad
 #endif
 
 // Acceleration threshold for launch detection (ft/s^2)
-const float accel_threshold = 2*g;
+const float ACCEL_THRESHOLD = 2*GRAVITY;
 // Velocity threshold for landing detection (ft/s)
-const float velocity_threshold = 0.1f;
+const float VELOCITY_THRESHOLD = 0.1f;
 
-//Predicted altitude
-float predicted_altitude = 0.0f;
-
-// PIN DEFINITIONS
-const int ats_pin = 6;
-const int LED_pin = LED_BUILTIN;
+// ***************** PIN DEFINITIONS *****************
+const int ATS_PIN = 6;
+const int LED_PIN = LED_BUILTIN;
 #if SUBSCALE
     const int altimeter_chip_select = 1;     // BMP
 #else
     const int altimeter_chip_select = 10;     // BMP
 #endif
-// We shouldn't need to define these we use the dedicated hardware SPI pins
-// const int MISO = 12;
-// const int MOSI = 11;
-// const int SCK = 13;
-
 
 // ATS SERVO PARAMETERS
-Servo ATS_servo;
-float ats_position = 0.0f;
-const int ats_min = 0;
-const int ats_max = 180;
-
-
+Servo m_atsServo;
+float gAtsPosition = 0.0f;
+const int ATS_MIN = 0;
+const int ATS_MAX = 180;
+const float ATS_IN = 0.0f;
+const float ATS_OUT = 1.0f;
 // SD CARD PARAMETERS
 #if SUBSCALE
   const int chip_select = 0;
@@ -144,31 +114,30 @@ const int ats_max = 180;
 #endif
 bool sd_active = false;
 #if SUBSCALE
-    char file_name[] = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
+    String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 #else
-    char file_name[] = "VDF_full.txt";
+    String file_name = "PDF.txt";
 #endif
 
 // SENSOR OBJECTS
 
-Adafruit_BMP3XX bmp;     // Altimeter
-Adafruit_LSM6DSOX sox;    // IMU
+Adafruit_BMP3XX m_bmp;     // Altimeter
+Adafruit_LSM6DSOX m_sox;    // IMU
 sensors_event_t accel, gyro, temp;
 
-
-// MEASUREMENT CONSTANTS AND VARIABLES
+// MEASUREMENT VARIABLES
 
 // Keeps track of data until it is written to the SD card
-String buffer;
+String gBuffer;
 
 // Number of measurements to take before writing to SD card
 const int buffer_size = 50;
 
 // Keeps track of time to make sure we are taking measurements at a consistent rate
-unsigned long start_time, curr_time, timer, loop_time_delta, prev_loop_time = 0;
+unsigned long gStartTime, gCurrTime, gTimer, gTimeDelta, gPrevLoopTime = 0;
 
 // Filtered measurements shall be kept as global variables; raw data will be kept local to save memory
-float altitude_filtered, velocity_filtered, acceleration_filtered;
+float gAltFiltered, gVelocityFiltered, gAccelFiltered;
 // Internal stuff for the Kalman Filter
 float altitude_filtered_previous, acceleration_filtered_previous = 0.0;
 float gain_altitude, gain_acceleration, cov_altitude_current, cov_acceleration_current, cov_altitude_previous, cov_acceleration_previous = 0.0;
@@ -177,9 +146,10 @@ float variance_altitude, variance_acceleration = 0.1;     // Might want to chang
 float previous_velocity_filtered = 0.0;
 
 // Remembers if the rocket has launched and landed
-bool launched, landed;
-unsigned long launch_time;
+bool gLaunched, gLanded;
+unsigned long gLaunchTime;
 unsigned long land_time = 0;
+float absolute_alt_target = ALT_TARGET;
 
 // Kalman filter stuff
 BLA::Matrix<NumObservations> obs; // observation vector
@@ -187,122 +157,104 @@ KALMAN<NumStates,NumObservations> KalmanFilter; // Kalman filter
 BLA::Matrix<NumStates> measurement_state;
 
 // Entry point to the program
-// Initializes all sensors and devices, and briefly tests the ATS
+/** @brief Initializes all devices, test devices and ATS */ 
 void setup() {
+    LEDSetup();
+    // Setup serial terminal
     Serial.begin(115200);
     Serial.println("Initializing...");
-    pinMode(LED_pin, OUTPUT);
-    digitalWrite(LED_pin, HIGH);
 
-
+    // Initalize Simulator
     #if SIMULATE
         startSimulation();
     #endif
 
     // Initialize SD card
-    if (!initializeSDCard()) {
-        // Tries to initialize the SD card 10 times before giving up
-        // If this fails, something is wrong: stops execution and blinks the LED to indicate an error
+    if (!InitializeSDCard()) {
+        Serial.println("SD card setup failed. Aborting.");
         LEDError();
     }
 
     // Initialize sensors
-    if (!setupSensors()) {
-        // If one of the sensors doesn't connect, stop execution and blinks onboard LED to indicate an error
+    if (!SetupSensors()) {
         Serial.println("Sensor setup failed. Aborting.");
         LEDError();
     }
-    bmp.performReading();
-    Serial.println("Right after setup");
+    
+    // Test if all sensors on Altimeter works
+    if (!TestSensors()){
+        Serial.println("one or more altimeter sensors are not working");
+        LEDError();
+    }
+    
+    Serial.println("All sensors working!");
+    TestATS();
 
-    // Setup Kalman filter stuff
-    // Time evolution matrix
+    // Initalize time evolution matrix
     KalmanFilter.F = {1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0};
+                      0.0, 1.0, 0.0,
+                      0.0, 0.0, 1.0};
 
-    // measurement matrix (first row altimeter, second row accelerometer)
+    // measurement matrix (first row: altimeter, second row: accelerometer)
     KalmanFilter.H = {1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0};
+                      0.0, 0.0, 1.0};
     // measurement covariance matrix
     KalmanFilter.R = {AltimeterNoise*AltimeterNoise,   0.0,
-            0.0, IMUNoise*IMUNoise};
+                                    0.0, IMUNoise*IMUNoise};
     // model covariance matrix
-    KalmanFilter.Q = {m_p*m_p,     0.0,     0.0,
-                0.0, m_s*m_s,     0.0,
-                0.0,     0.0, m_a*m_a};
+    KalmanFilter.Q = {m_p*m_p,     0.0,   0.0,
+                        0.0,  m_s*m_s,     0.0,
+                        0.0,     0.0, m_a*m_a};
 
     obs.Fill(0.0);
     measurement_state.Fill(0.0);
 
-    // Test the ATS
-    bmp.performReading();
-    Serial.println("Before ATS test");
-    testATS();
-    bmp.performReading();
-    Serial.println("After ATS test");
-
-    bmp.performReading();
-    start_time = millis();
     Serial.println("Arduino is ready!");
     LEDSuccess();
+    gStartTime = millis();
 }
 
-
 // Repeats indefinitely after setup() is finished
-// Will measure data, filter it, and write it to the SD card from when the rocket launches until it lands
+/** @brief collect/log data  and control ATS */
 void loop() {
-    buffer = "";
-    bmp.performReading();
-
+    gBuffer = "";
     for (int i = 0; i < buffer_size; i++) {
-
-        // Run timer to ensure loop runs at a consistent rate
-        run_timer();
-
-        // Get measurements from sensors and add them to the buffer
-        bmp.performReading();
-        buffer += getMeasurements();
-        buffer += "\n";
-
+        RunTimer();  // ensures loop runs at a consistent rate
+        // Get measurements from sensors and add to buffer
+        gBuffer = gBuffer + GetMeasurements() + "\n";
+        // ****(Pre-Flight)****
         // Detect launch based on acceleration threshold
-        if (acceleration_filtered > accel_threshold && !launched) {
+        if (gAccelFiltered > ACCEL_THRESHOLD && !gLaunched) {
             // Write CSV header to the file
-            writeData("***************** START OF DATA ***************** TIME SINCE BOOT: " + String(millis()) + " ***************** TICK SPEED: " + String(loop_target) + "ms\n");
-            writeData("time, pressure (hPa), altitude_raw (ft), acceleration_raw_x (ft/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, altitude_filtered (ft), velocity_filtered (ft/s), acceleration_filtered (ft/s^2), temperature (from IMU, degrees C), ats_position (servo degrees)\n");
+            WriteData("***************** START OF DATA ***************** TIME SINCE BOOT: " + String(millis()) + " ***************** TICK SPEED: " + String(LOOP_TARGET_MS) + "ms\n");
+            WriteData("time, pressure (hPa), altitude_raw (ft), acceleration_raw_x (ft/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, gAltFiltered (ft), gVelocityFiltered (ft/s), gAccelFiltered (ft/s^2), temperature (from IMU, degrees C), gAtsPosition (servo degrees)\n");
 
-            launched = true;
-            launch_time = millis();
             if (DEBUG) {Serial.println("Rocket has launched!");}
-
+            gLaunched = true;
+            gLaunchTime = millis();
+            
             // Bring the ATS back online
             attachATS();
-            setATSPosition(0.0);
+            setATSPosition(ATS_IN);
 
             // Set status LED
             LEDLogging();
         }
-
+        // ****(During Flight)****
         // If the rocket has launched, adjust the ATS as necessary, and detect whether the rocket has landed
-        if (launched) {
+        if (gLaunched) {
             LEDFlying();
-            adjustATS();
-
-            if (detectLanding()) {
-                landed = true;
-            }
+            AdjustATS();
+            if (DetectLanding()) {gLanded = true;}
+        }
+        else {
+            // If we are still on the pad, measure the altitude of the launch pad
+            absolute_alt_target = ALT_TARGET + gAltFiltered;
         }
     }
-    if (launched) {
-        // Write batch of data to SD card
-        writeData(buffer);
-    }
-    // else {
-    //     // If rocket has not launched yet, assume it's still on the pad, and find which way is down
-    //     updatePrelaunchNormalVector();
-    // }
-
-    if (landed) {
+    if (gLaunched) {WriteData(gBuffer);}
+    // ****(END OF FLIGHT)****
+    if (gLanded) {
         // End the program
         detachATS();
         if (DEBUG) {Serial.println("Rocket has landed, ending program");}
@@ -310,28 +262,28 @@ void loop() {
     }
 }
 
-
-// Function to handle loop timing: delays the loop to ensure it runs at a consistent rate
-void run_timer() {
-    long temp_time = millis() - prev_loop_time;
-    // Serial.println(temp_time);
-    if (temp_time < loop_target) {
-        delayMicroseconds((loop_target - temp_time) * 1000);
+/** @brief ensures data collected at same rate
+ * ensures each iteration in arduino main loop for loop runs at same rate */
+void RunTimer() {
+    long tempTime = millis() - gPrevLoopTime;
+    // Serial.println(tempTime);
+    if (tempTime < LOOP_TARGET_MS) {
+        delayMicroseconds((LOOP_TARGET_MS - tempTime) * 1000);
     }
-    else if (temp_time > loop_target + 1) {
-        Serial.println("Board is unable to keep up with target loop time of " + String(loop_target) + " ms (execution took "+ String(temp_time) + " ms)");
+    else if (tempTime > LOOP_TARGET_MS + 1) {
+        Serial.println("Board is unable to keep up with target loop time of " + String(LOOP_TARGET_MS) + " ms (execution took "+ String(tempTime) + " ms)");
     }
-    curr_time = millis();
-    timer = curr_time - start_time;
-    loop_time_delta = curr_time - prev_loop_time;
+    gCurrTime = millis();
+    gTimer = gCurrTime - gStartTime;
+    gTimeDelta = gCurrTime - gPrevLoopTime;
     // Serial.println(loop_time);
-    prev_loop_time = curr_time;
+    gPrevLoopTime = gCurrTime;
 }
 
-
-// Initialize the SD card (returns true if successful, false if failed)
-// Right now, tries to connect 10 times before going into an error state; could change so it keeps trying indefinitely
-bool initializeSDCard() {
+/** @brief Initialize the SD card  
+* Right now, tries to connect 10 times before going into an error state; could change so it keeps trying indefinitely
+*/
+bool InitializeSDCard() {
     #if SIMULATE
         // If simulation mode is active, don't try to connect to any hardware
         Serial.println("(simulation) SD card initialized successfully!");
@@ -363,16 +315,15 @@ bool initializeSDCard() {
     return true;
 }
 
-
-// Log data to the SD card in the file "datalog.txt"
-void writeData(String text) {
+/** @brief Write data to SD card in "datalog.txt" file */
+void WriteData(String text) {
     #if SIMULATE
         Serial.println("(simulation) Data to SD card: " + text);
         return;
     #endif
 
     if (sd_active) {
-        File data_file = SD.open(file_name, FILE_WRITE);
+        File data_file = SD.open("subscl_1.txt", FILE_WRITE);
         if (data_file) {
             if (DEBUG) {Serial.println("Writing to SD card!");}
             data_file.print(text);
@@ -381,7 +332,7 @@ void writeData(String text) {
             // Could leave this out so the program tries to keep logging data even if it fails once
             // sd_active = false;
 
-            Serial << "Error opening file " << file_name << "\n";
+            Serial.println("Error opening subscl_1.txt");
         }
     } else {
         // If the SD card has not connected successfully
@@ -389,11 +340,9 @@ void writeData(String text) {
     }
 }
 
-
-// Sensor setup functions
-
-// Initialize all sensors and return true if successful, false if any have failed
-bool setupSensors() {
+// ***************** Sensor Setup *****************
+/**  @brief Initialize all sensors */
+bool SetupSensors() {
   #if SIMULATE
     Serial.println("(simulation) Sensors connected successfully!");
     return true;
@@ -401,71 +350,127 @@ bool setupSensors() {
 
   if (setupLSM6DSOX() && setupBMP3XX()) {
     if (DEBUG) {Serial.println("Sensors initialized successfully!");}
-    bmp.performReading();
+    m_bmp.performReading();
     Serial.println("Setup reading fine");
     return true;
   }
   return false;
 }
 
-// Altimeter
+/**  @brief Setup Altimeter */
 bool setupBMP3XX() {
-  if (!bmp.begin_SPI(altimeter_chip_select)) {
+  if (!m_bmp.begin_SPI(altimeter_chip_select)) {
     Serial.println("Unable to connect to altimeter");
     return false;
   }
-  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
-  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
-  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
-  bmp.setOutputDataRate(BMP3_ODR_50_HZ);
+  m_bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  m_bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  m_bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  m_bmp.setOutputDataRate(BMP3_ODR_50_HZ);
   Serial.println("Altimeter good");
-  bmp.performReading();
-  Serial.print(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  m_bmp.performReading();
+  Serial.print(m_bmp.readAltitude(SEA_LEVEL_PRESSURE_HPA));
   return true;
 }
 
-// IMU
+/**  @brief Setup IMU */
 bool setupLSM6DSOX() {
-  if (!sox.begin_I2C()) {
+  if (!m_sox.begin_I2C()) {
     Serial.println("Unable to connect to IMU");
     return false;
   }
   return true;
 }
 
+/**  @brief Test Altimeter and IMU */
+bool TestSensors() {
+    if (!m_bmp.performReading()){
+        Serial.println("one or more altimeter sensors are not working");
+        return false;
+    }
+    if (!m_sox.getEvent(&accel, &gyro, &temp)){
+        Serial.println("one or more IMU sensors are not working");
+        return false;
+    }
+    return true;
+}
 
+// ***************** Collecting/Logging Data *****************
+/**  @brief  Read altitude from altimeter
+* IMPORTANT: update altimeter with `performreading()` beforehand
+* @returns raw altitude (meters)
+*/
+float ReadAltimeter() {
+    float altimeter_data = m_bmp.readAltitude(SEA_LEVEL_PRESSURE_HPA) * METERS_TO_FEET;
+    if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
+    return altimeter_data;
+}
 
-// Get measurements from sensors and return them as a CSV string, also updating global variables as necessary
-// Format: time, pressure (hPa), altitude_raw (m), acceleration_raw_x (m/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, altitude_filtered, velocity_filtered, acceleration_filtered, temperature (from IMU, degrees C), ats_position (degrees)
-String getMeasurements() {
+/** @brief Read acceleration from IMU 
+ * IMPORTANT: update IMU with `getevent()` first for current reading
+ * @returns raw acceleration (ft/s^2)
+*/
+float ReadIMU() {
+    float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
+    // Convert to feet
+    imu_data = imu_data * METERS_TO_FEET;
+    if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
+    return imu_data;
+}
+
+/** @brief Read temperature 
+ * reads from IMU
+ * IMPORTANT: update IMU with `getevent()` beforehand
+ * @returns temperature (degrees C)
+ */
+float ReadThermometer() {
+    float thermometer_data = temp.temperature;
+    if (DEBUG) {Serial.println("Thermometer: " + String(thermometer_data));}
+    return thermometer_data;
+}
+
+/** @brief refresh sensors and update globals with latest measurements
+ * output string can be viewed when DEBUG is true
+ * @returns a CSV string with format:
+ * - time, pressure (hPa), altitude_raw (m), acceleration_raw_x (m/s^2), 
+ * - acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, 
+ * - gAltFiltered, gVelocityFiltered, gAccelFiltered, 
+ * - temperature (from IMU, degrees C), gAtsPosition (degrees)
+ */
+String GetMeasurements() {
     #if SIMULATE
         // If simulation mode is ON, get simulated data from serial bus instead
         return getSimulatedMeasurements();
     #endif
+    //update sensors
+    m_bmp.performReading(); //update altimeter
+    m_sox.getEvent(&accel, &gyro, &temp); //update imu
+    
+    //pass raw data to be filtered
+    FilterData(ReadAltimeter(), ReadIMU()); 
 
-    float altitude_raw, acceleration_raw;
-
-    bmp.performReading();
-    updateAltimeter();
-    updateIMU();
-    altitude_raw = readAltimeter();
-    acceleration_raw = readIMU();
-
-    filterData(altitude_raw, acceleration_raw);
-
-    String movement_data = String(bmp.pressure/100.0) + "," + String(bmp.readAltitude(SEALEVELPRESSURE_HPA)) + "," + String(accel.acceleration.x*METERS_TO_FEET) + "," + String(accel.acceleration.y*METERS_TO_FEET) + "," + String(accel.acceleration.z*METERS_TO_FEET) + "," + String(gyro.gyro.x) + "," + String(gyro.gyro.y) + "," + String(gyro.gyro.z) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
-
-    String time_data = String(millis() - start_time);
-
-    String sensor_data = String(readThermometer());
-    // Serial.println(time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position)) + "," + String(predicted_altitude);
-    return time_data + "," + movement_data + "," + sensor_data + "," + String(ats_position) + "," + String(predicted_altitude);
+    // print measurements
+    String movementData = String(m_bmp.pressure/100.0) + "," + 
+                           String(m_bmp.readAltitude(SEA_LEVEL_PRESSURE_HPA)) + "," + 
+                           String(accel.acceleration.x*METERS_TO_FEET) + "," + 
+                           String(accel.acceleration.y*METERS_TO_FEET) + "," + 
+                           String(accel.acceleration.z*METERS_TO_FEET) + "," + 
+                           String(gyro.gyro.x) + "," + 
+                           String(gyro.gyro.y) + "," + 
+                           String(gyro.gyro.z) + "," + 
+                           String(gAltFiltered) + "," + 
+                           String(gVelocityFiltered) + "," + 
+                           String(gAccelFiltered);
+    String timeData = String(millis() - gStartTime);
+    String sensorData = String(ReadThermometer());
+    // if (DEBUG) {Serial.println(timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition));}
+    return timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition);
 }
 
-
-// Filter raw data and store it in global variables; still need to implement
-void filterData(float alt, float acc) {
-    float DT = ((float)loop_time_delta)/1000;
+/** @brief Filter raw data and updates globals
+ * still need to implement */ 
+void FilterData(float alt, float acc) {
+    float DT = ((float)gTimeDelta)/1000;
 
     KalmanFilter.F = {1.0,  DT,  DT*DT/2,
 		 0.0, 1.0,       DT,
@@ -480,165 +485,33 @@ void filterData(float alt, float acc) {
     // BLA::Matrix<NumObservations, 3> current_obs = {alt, 0.0, 0.0,
     //                                             0.0, 0.0, acc};
     // KalmanFilter.update(current_obs);
-    altitude_filtered = KalmanFilter.x(0);
-    velocity_filtered = KalmanFilter.x(1);
-    acceleration_filtered = KalmanFilter.x(2);
-    // Serial << alt << "," << acc <<"," << altitude_filtered << "," << velocity_filtered << "," << acceleration_filtered << "\n";
-    Serial << acceleration_filtered << "\n";
-    // Serial.println("Filtered Altitude: " + String(altitude_filtered) + " Filtered Velocity: " + String(velocity_filtered) + " Filtered Acceleration: " + String(acceleration_filtered));
-
-
-    // NO FILTER vvvvvv
-    // altitude_filtered = alt;
-    // velocity_filtered = (altitude_filtered - previous_velocity_filtered) / (loop_time/1000);
-    // acceleration_filtered = acc;
-
-
-    // OLD FILTER vvvvvv
-
-    // // Low pass filter: if data is sus, extrapolate from previous data instead
-    // if (abs(alt - altitude_filtered) < 100) {
-    //     alt = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
-    // }
-    // if (abs(acc - acceleration_filtered) < 100) {
-    //     acc = acceleration_filtered;
-    // }
-
-    // // Kalman Filter
-
-    // // Update altitude
-    // // altitude_filtered_previous = altitude_filtered; // Should update via dynamics model (TODO)
-    // altitude_filtered_previous = altitude_filtered + velocity_filtered * loop_time + 0.5 * acceleration_filtered * pow(loop_time, 2);
-    // cov_altitude_previous = cov_altitude_current; // Should update via dynamics model (TODO)
-
-    // altitude_filtered = altitude_filtered_previous + gain_altitude * (alt - altitude_filtered_previous);
-    // cov_altitude_current = (1 - gain_altitude) * cov_altitude_previous;
-    // gain_altitude = cov_altitude_current / (cov_altitude_current + variance_altitude);
-
-    // // Update acceleration
-    // acceleration_filtered_previous = acceleration_filtered; // Should update via dynamics model (TODO)
-    // cov_acceleration_previous = cov_acceleration_current; // Should update via dynamics model (TODO)
-
-    // acceleration_filtered = acceleration_filtered_previous + gain_acceleration * (acc - acceleration_filtered_previous);
-    // cov_acceleration_current = (1 - gain_acceleration) * cov_acceleration_previous;
-    // gain_acceleration = cov_acceleration_current / (cov_acceleration_current + variance_acceleration);
-
-    // // Interpolate velocity
-    // velocity_filtered = (altitude_filtered - altitude_filtered_previous) / loop_time;
+    gAltFiltered = KalmanFilter.x(0);
+    gVelocityFiltered = KalmanFilter.x(1);
+    gAccelFiltered = KalmanFilter.x(2);
+    // Serial << alt << "," << acc <<"," << gAltFiltered << "," << gVelocityFiltered << "," << gAccelFiltered << "\n";
+    Serial << gAccelFiltered << "\n";
+    // Serial.println("Filtered Altitude: " + String(gAltFiltered) + " Filtered Velocity: " + String(gVelocityFiltered) + " Filtered Acceleration: " + String(gAccelFiltered));
 }
 
-
-// Read altitude from altimeter (in meters) and return it
-float readAltimeter() {
-    float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA) * METERS_TO_FEET;
-    // float altimeter_data = bmp.readAltitude(SEALEVELPRESSURE_HPA);
-    // if (DEBUG) {Serial.println("Altimeter: " + String(altimeter_data));}
-    return altimeter_data;
-}
-
-void updateAltimeter() {
-    bmp.performReading();
-}
-
-// Poll all measurements from IMU at once
-void updateIMU() {
-    sox.getEvent(&accel, &gyro, &temp);
-}
-
-// Read IMU data, get vertical acceleration (in meters/second^2), and return it
-float readIMU() {
-    // Assume the IMU is positioned at a strange angle, but that all relevant acceleration is upward
-    float imu_data = pow(pow(accel.acceleration.x,2) + pow(accel.acceleration.y, 2) + pow(accel.acceleration.z, 2), 0.5);
-    // If the net acceleration is in the same direction as gravity, make it negative for "downward"
-    // if (accel.acceleration.x * gravity_normal_vector[0] + accel.acceleration.y * gravity_normal_vector[1] + accel.acceleration.z * gravity_normal_vector[2] >= 0) {
-    //     imu_data = -imu_data;
-    // }
-    // Convert to feet
-    imu_data = imu_data * METERS_TO_FEET;
-    // if (DEBUG) {Serial.println("IMU: " + String(imu_data));}
-    return imu_data;
-}
-
-// void updatePrelaunchNormalVector() {
-//     // Get the average acceleration vector (from gravity) before launch
-//     gravity_normal_vector[0] = accel.acceleration.x*METERS_TO_FEET;
-//     gravity_normal_vector[1] = accel.acceleration.y*METERS_TO_FEET;
-//     gravity_normal_vector[2] = accel.acceleration.z*METERS_TO_FEET;
-// }
-
-// Read temperature from thermometer (in degrees C) and return it
-float readThermometer() {
-    float thermometer_data = temp.temperature;
-    // if (DEBUG) {Serial.println("Thermometer: " + String(thermometer_data));}
-    return thermometer_data;
-}
-
-
-// Detect if the rocket has landed: if the rocket has been reasonably still for 5 seconds, it is considered landed
-bool detectLanding() {
-    if (launch_time != 0 && millis() - launch_time > 60000) {
-        return true;
-    }
-
-
-    // if (velocity_filtered < velocity_threshold) {
-    //     land_time = millis();
-    // }
-    // else {
-    //     land_time = 0;
-    // }
-
-    // if (land_time != 0 && millis() - land_time > 5000) {
-    //     return true;
-    // }
-
+/** @brief Detect if rocket has landed 
+ * if the rocket has been reasonably still for 5 seconds, it is considered landed
+*/
+bool DetectLanding() {
+    if (gLaunchTime != 0 && millis() - gLaunchTime > 60000) { return true; } 
     return false;
 }
 
-
-// ATS METHODS
-
-// Turns on the ATS servo
-void attachATS() {
-    #if SIMULATE
-        return;
-    #endif
-    #if SKIP_ATS
-        return;
-    #endif
-
-    ATS_servo.attach(ats_pin);
-}
-
-// Turns off the ATS servo (to save power)
-void detachATS() {
-    #if SIMULATE
-        return;
-    #endif
-    #if SKIP_ATS
-        return;
-    #endif
-
-    ATS_servo.detach();
-}
-
-// Sets how far the ATS is extended based on a value between 0 and 1
-// TODO: only call this function when servo position changes
-void setATSPosition(float val) {
-    #if SIMULATE
-        // Serial.println("(simulation) ATS position:" + String(val));
-        return;
-    #endif
-    #if SKIP_ATS
-        return;
-    #endif
-    val = 1.0f - val;
-    float pos = (ats_max - ats_min) * val + ats_min;
-    ATS_servo.write(int(pos));
-    if (DEBUG) {Serial.println("ATS position set to " + String(pos));}
-}
-
-float pid_factor(int error, float Kp, float Kd)
+/** @brief runs pid
+ * @arg error: acceleration error
+ * @arg Kp: proportional gain
+ * @arg Kd: derivative gain
+ * - positive error means rocket is going too slow
+ * - negative error means rocket is going too fast
+ * - Kp: higher = stronger immediate response
+ * - Kd: adjusts response based on how frequently error changes
+ * @return the absolute position to adjust ATS to in degrees
+ */
+float PIDFactor(int error, float Kp, float Kd)
 {
   static int old_error = 0;
 
@@ -650,96 +523,132 @@ float pid_factor(int error, float Kp, float Kd)
   return proportional + derivative; 
 }
 
-// Adjust the ATS based on the current altitude and desired apogee
-void adjustATS() {
-    if (millis() - launch_time > 18000) {
-        // Retract ATS fully after 18 seconds
-        setATSPosition(0.0);
+// ***************** ATS METHODS *****************
+
+/** @brief turn on ATS servo */
+void attachATS() {
+    requires(!m_atsServo.attached());
+    #if SIMULATE
+        return;
+    #endif
+    #if SKIP_ATS
+        return;
+    #endif
+    m_atsServo.attach(ATS_PIN);
+}
+/** @brief turn off ATS servo
+ * (for saving power) */
+void detachATS() {
+    requires(m_atsServo.attached());
+    #if SIMULATE
+        return;
+    #endif
+    #if SKIP_ATS
+        return;
+    #endif
+    m_atsServo.detach();
+}
+
+/** @brief set ATS position  
+ * @arg percent_rot: float between 0 (fully in) and 1 (fully out)
+ * only call this function when servo position changes
+ */
+void setATSPosition(float percent_rot) {
+    #if SIMULATE
+        return;
+    #endif
+    #if SKIP_ATS
+        return;
+    #endif
+    float pos = (ATS_MAX - ATS_MIN) * (1.0f - percent_rot) + ATS_MIN;
+    m_atsServo.write(int(pos));
+    if (DEBUG) {Serial.println("ATS position set to " + String(pos));}
+}
+
+
+/** @brief adjust ATS with PID
+ * Adjust the ATS based on the current altitude and desired apogee (stored in absolute_alt_target; the ALT_TARGET represents altitude above the launch level, while absolute_alt_target is the altitude above sea level)
+ */
+void AdjustATS() {
+    float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(absolute_alt_target-gAltFiltered)))
+     // Retract ATS fully after 18 seconds
+    if (millis() - gLaunchTime > 18000) {
+        setATSPosition(ATS_IN);
         return;
     }
-
-    if (altitude_filtered >= alt_target) {
-        ats_position = 1.0;
+    // Fully deploy ATS if reached Altitude target
+    if (gAltFiltered >= absolute_alt_target) {
+        gAtsPosition = ATS_OUT;
     }
     else {
-        // Calculate how wide to make the rocket so its hits its target altitude
-        // 0 = 583.99^2 + 2 * a * 3927.15
-        float target_area = (pow(velocity_filtered, 2)/(alt_target - altitude_filtered) - 2*g)*ROCKET_MASS/(velocity_filtered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        // Calculate desired surface-area to reach target altitude
+        float target_area = (pow(gVelocityFiltered, 2)/(absolute_alt_target - gAltFiltered) - 2*GRAVITY)*ROCKET_MASS/(gVelocityFiltered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         Serial.println("Old ATS pos: " + String(target_area/ATS_MAX_SURFACE_AREA));
-        // Adjust the ATS based on the target area
-        //drag force
-        // float Fd = 1/2 * ROCKET_DRAG_COEFFICIENT * (ROCKET_CROSS_SECTIONAL_AREA + MAX_FLAP_SURFACE_AREA*ats_position) * pow(velocity_filtered,2.0);
-        // float inst_acceleration = Fd/ROCKET_MASS;
-        float error = acceleration_filtered - TARGET_ACCELERATION; // positive if drag + gravity >= target, means if <, we are going TOO FAST and need to slow down
-        // if error < 0, deploy, else, its fine
-        if (error > 0){
-          error = 0;
-        } else {
-          error = abs(error);
+        // Calculate error in acceleration
+        float error = gAccelFiltered - targetAcceleration; // positive if drag + gravity >= target, means if <, we are going TOO FAST and need to slow down
+        // calculate adjustment
+        float adjustment;
+        if (error > 0){ //too slow
+            adjustment = 0;
+        } 
+        else { //too flast
+            adjustment = PIDFactor(abs(error), 0.03,0); // should normalize to 0 to 1
         }
-        float adjustment = pid_factor(error, 0.03,0); // should normalize to 0 to 1
-        
-        predicted_altitude = (0.5*ROCKET_MASS*pow(velocity_filtered, 2))/(ROCKET_MASS*g + 0.5*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT*pow(velocity_filtered,2)*ATS_MAX_SURFACE_AREA*adjustment);
-        // target_area -= ROCKET_CROSS_SECTIONAL_AREA;
-        // ats_position = target_area/ATS_MAX_SURFACE_AREA;
-        ats_position = adjustment;
+        gAtsPosition = adjustment;
     }
 
-    // // This is last year's code to adjust the ATS; might need to be changed a bit
-    // if (altitude_filtered > alt_target && ats_position < 1.0 && millis() - launch_time > 4500) {
-    //     // If the rocket is above the target altitude, extend the ATS
-    //     ats_position += 0.1;
-    // } else if (altitude_filtered < alt_target && ats_position > 0.0 && millis() - launch_time > 4500) {
-    //     // If the rocket is below the target altitude, retract the ATS
-    //     ats_position -= 0.1;
-    // }
-
-    if (millis() - launch_time > 4500) {
+    // ATS window
+    if (millis() - gLaunchTime > 4500) {
         // Adjust ATS based on position
-        setATSPosition(ats_position);
-        Serial.println("ATS position: " + String(ats_position));
+        setATSPosition(gAtsPosition);
+        Serial.println("ATS position: " + String(gAtsPosition));
     }
 }
 
-// Test the ATS: fully extend and retract it, then detach the servo to save power
-void testATS() {
+/** @brief Test the ATS: fully extend and retract it, then detach the servo */
+void TestATS() {
+    if (DEBUG) { Serial.println("Testing ATS..."); }
     attachATS();
-    setATSPosition(0.0f);
+    setATSPosition(ATS_IN);
     delay(2000);
-    setATSPosition(1.0f);  // Initial position
+    setATSPosition(ATS_OUT);  // Initial position
     delay(2000);
-    setATSPosition(0.0f);  // Reset position
+    setATSPosition(ATS_IN);  // Reset position
     delay(2000);
     detachATS();
+    Serial.println("ATS Test Sucessful...");
 }
 
-
-
-// STATUS LED METHODS
+// ***************** STATUS LED Methods *****************
 void LEDLogging() {
-    digitalWrite(LED_pin, HIGH);
+    digitalWrite(LED_PIN, HIGH);
 }
 
 void LEDSuccess() {
     for (int i = 0; i < 4; i++) {
-        digitalWrite(LED_pin, LOW);
+        digitalWrite(LED_PIN, LOW);
         delay(250);
-        digitalWrite(LED_pin, HIGH);
+        digitalWrite(LED_PIN, HIGH);
         delay(250);
     }
 }
 
 void LEDError() {
     while (true) {
-        digitalWrite(LED_pin, HIGH);
+        digitalWrite(LED_PIN, HIGH);
         delay(1000);
-        digitalWrite(LED_pin, LOW);
+        digitalWrite(LED_PIN, LOW);
         delay(1000);
     }
 }
 
 void LEDFlying() {
-    digitalWrite(LED_pin, HIGH);
+    digitalWrite(LED_PIN, HIGH);
+}
+
+void LEDSetup(){
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
 }
 
 // If in simulation mode, update simulated sensor values from serial bus
@@ -747,9 +656,9 @@ void LEDFlying() {
 
 // Begin the simulation by waiting for the host program to start and give confirmation over serial
 void startSimulation() {
-    simulatedSensorValues->insert("altitude_raw", "0.0");
-    simulatedSensorValues->insert("acceleration_raw", "0.0");
-    simulatedSensorValues->insert("temperature", "0.0");
+    m_simSensorValues->insert("altitude_raw", "0.0");
+    m_simSensorValues->insert("acceleration_raw", "0.0");
+    m_simSensorValues->insert("temperature", "0.0");
 
     // Await connection from host computer
     while (!Serial.readString()) {
@@ -759,45 +668,44 @@ void startSimulation() {
     Serial.println("(simulation) Arduino is ready!");
 }
 
-// Reads the serial buffer for the most recent data sent by the hosts, and updates the simulatedSensorValues hashmap accordingly
+// Reads the serial buffer for the most recent data sent by the hosts, and updates the m_simSensorValues hashmap accordingly
 void collectSimulatedData() {
-    String serial_buffer = Serial.readString();
-    String current_key, current_value = "";
-    for (int i = 0; i < serial_buffer.length(); i++) {
-        if (serial_buffer[i] == ':') {
-            current_key = current_value;
-            current_value = "";
-        } else if (serial_buffer[i] == ',') {
-            simulatedSensorValues->insert(current_key, current_value);
-            Serial.println("Received "+current_key+", "+current_value);
-            current_key = "";
-            current_value = "";
+    String serialBuffer = Serial.readString();
+    String currentKey, currentValue = "";
+    for (int i = 0; i < serialBuffer.length(); i++) {
+        if (serialBuffer[i] == ':') {
+            currentKey = currentValue;
+            currentValue = "";
+        } else if (serialBuffer[i] == ',') {
+            m_simSensorValues->insert(currentKey, currentValue);
+            Serial.println("Received "+currentKey+", "+currentValue);
+            currentKey = "";
+            currentValue = "";
         } else {
-            current_value += serial_buffer[i];
+            currentValue += serialBuffer[i];
         }
     }
 }
 
 float dataAsFloat(String measurement_name) {
-    return simulatedSensorValues->search(measurement_name).toFloat();
+    return m_simSensorValues->search(measurement_name).toFloat();
 }
 
-// Updates the global measurement variables from the simulatedSensorValues hashmap, as opposed to trying to poll sensors
+// Updates the global measurement variables from the m_simSensorValues hashmap, as opposed to trying to poll sensors
 String getSimulatedMeasurements() {
         collectSimulatedData();
         
         float altitude_raw = dataAsFloat("altitude_raw");
         float acceleration_raw = dataAsFloat("acceleration_raw");
 
-        filterData(altitude_raw, acceleration_raw);
+        FilterData(altitude_raw, acceleration_raw);
 
-        String movement_data = String(altitude_raw) + "," + String(acceleration_raw) + "," + String(altitude_filtered) + "," + String(velocity_filtered) + "," + String(acceleration_filtered);
+        String movementData = String(altitude_raw) + "," + String(acceleration_raw) + "," + String(gAltFiltered) + "," + String(gVelocityFiltered) + "," + String(gAccelFiltered);
 
-        String time_data = String(millis() - start_time);
+        String timeData = String(millis() - gStartTime);
 
-        String sensor_data = String(dataAsFloat("temperature")); // IK its a little redundant but it's for consistency
+        String sensorData = String(dataAsFloat("temperature")); // IK its a little redundant but it's for consistency
 
-        return time_data + "," + movement_data + "," + sensor_data + "," + ats_position;
+        return timeData + "," + movementData + "," + sensorData + "," + gAtsPosition;
 }
 #endif
-
