@@ -82,7 +82,7 @@ const int LOOP_TARGET_MS = 30;
 #if SUBSCALE
     const float ALT_TARGET = 2000.0f; // ft
 #else
-    const float ALT_TARGET = 4500.0f; // ft
+    const float ALT_TARGET = 4500.0f; // ft above launch pad
 #endif
 
 // Acceleration threshold for launch detection (ft/s^2)
@@ -149,6 +149,7 @@ float previous_velocity_filtered = 0.0;
 bool gLaunched, gLanded;
 unsigned long gLaunchTime;
 unsigned long land_time = 0;
+float absolute_alt_target = ALT_TARGET;
 
 // Kalman filter stuff
 BLA::Matrix<NumObservations> obs; // observation vector
@@ -245,6 +246,10 @@ void loop() {
             LEDFlying();
             AdjustATS();
             if (DetectLanding()) {gLanded = true;}
+        }
+        else {
+            // If we are still on the pad, measure the altitude of the launch pad
+            absolute_alt_target = ALT_TARGET + gAltFiltered;
         }
     }
     if (gLaunched) {WriteData(gBuffer);}
@@ -458,7 +463,7 @@ String GetMeasurements() {
                            String(gAccelFiltered);
     String timeData = String(millis() - gStartTime);
     String sensorData = String(ReadThermometer());
-    if (DEBUG) {Serial.println(timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition));}
+    // if (DEBUG) {Serial.println(timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition));}
     return timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition);
 }
 
@@ -562,22 +567,22 @@ void setATSPosition(float percent_rot) {
 
 
 /** @brief adjust ATS with PID
- * Adjust the ATS based on the current altitude and desired apogee
+ * Adjust the ATS based on the current altitude and desired apogee (stored in absolute_alt_target; the ALT_TARGET represents altitude above the launch level, while absolute_alt_target is the altitude above sea level)
  */
 void AdjustATS() {
-    float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(ALT_TARGET-gAltFiltered)))
+    float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(absolute_alt_target-gAltFiltered)))
      // Retract ATS fully after 18 seconds
     if (millis() - gLaunchTime > 18000) {
         setATSPosition(ATS_IN);
         return;
     }
     // Fully deploy ATS if reached Altitude target
-    if (gAltFiltered >= ALT_TARGET) {
+    if (gAltFiltered >= absolute_alt_target) {
         gAtsPosition = ATS_OUT;
     }
     else {
         // Calculate desired surface-area to reach target altitude
-        float target_area = (pow(gVelocityFiltered, 2)/(ALT_TARGET - gAltFiltered) - 2*GRAVITY)*ROCKET_MASS/(gVelocityFiltered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
+        float target_area = (pow(gVelocityFiltered, 2)/(absolute_alt_target - gAltFiltered) - 2*GRAVITY)*ROCKET_MASS/(gVelocityFiltered*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT);
         Serial.println("Old ATS pos: " + String(target_area/ATS_MAX_SURFACE_AREA));
         // Calculate error in acceleration
         float error = gAccelFiltered - targetAcceleration; // positive if drag + gravity >= target, means if <, we are going TOO FAST and need to slow down
