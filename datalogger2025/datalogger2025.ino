@@ -116,7 +116,7 @@ bool sd_active = false;
 #if SUBSCALE
     String file_name = "subscl_2.txt"; // ⚠⚠⚠ FILE NAME MUST BE 8 CHARACTERS OR LESS OR ARDUINO CANNOT WRITE IT (WHY?!?!) ⚠⚠⚠
 #else
-    String file_name = "fullsc_1.txt";
+    String file_name = "PDF.txt";
 #endif
 
 // SENSOR OBJECTS
