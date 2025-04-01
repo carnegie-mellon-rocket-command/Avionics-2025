@@ -90,6 +90,7 @@ const float ACCEL_THRESHOLD = 2*GRAVITY;
 // Velocity threshold for landing detection (ft/s)
 const float VELOCITY_THRESHOLD = 0.1f;
 
+
 // ***************** PIN DEFINITIONS *****************
 const int ATS_PIN = 6;
 const int LED_PIN = LED_BUILTIN;
@@ -137,7 +138,7 @@ const int buffer_size = 50;
 unsigned long gStartTime, gCurrTime, gTimer, gTimeDelta, gPrevLoopTime = 0;
 
 // Filtered measurements shall be kept as global variables; raw data will be kept local to save memory
-float gAltFiltered, gVelocityFiltered, gAccelFiltered;
+float gAltFiltered, gVelocityFiltered, gAccelFiltered, gPredictedAltitude;
 // Internal stuff for the Kalman Filter
 float altitude_filtered_previous, acceleration_filtered_previous = 0.0;
 float gain_altitude, gain_acceleration, cov_altitude_current, cov_acceleration_current, cov_altitude_previous, cov_acceleration_previous = 0.0;
@@ -464,7 +465,7 @@ String GetMeasurements() {
     String timeData = String(millis() - gStartTime);
     String sensorData = String(ReadThermometer());
     // if (DEBUG) {Serial.println(timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition));}
-    return timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition);
+    return timeData + "," + movementData + "," + sensorData + "," + String(gAtsPosition) + "," + String(gPredictedAltitude);
 }
 
 /** @brief Filter raw data and updates globals
@@ -570,12 +571,13 @@ void setATSPosition(float percent_rot) {
  * Adjust the ATS based on the current altitude and desired apogee (stored in absolute_alt_target; the ALT_TARGET represents altitude above the launch level, while absolute_alt_target is the altitude above sea level)
  */
 void AdjustATS() {
-    float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(absolute_alt_target-gAltFiltered)))
+    float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(absolute_alt_target-gAltFiltered)));
      // Retract ATS fully after 18 seconds
     if (millis() - gLaunchTime > 18000) {
         setATSPosition(ATS_IN);
         return;
     }
+    
     // Fully deploy ATS if reached Altitude target
     if (gAltFiltered >= absolute_alt_target) {
         gAtsPosition = ATS_OUT;
@@ -595,6 +597,7 @@ void AdjustATS() {
             adjustment = PIDFactor(abs(error), 0.03,0); // should normalize to 0 to 1
         }
         gAtsPosition = adjustment;
+        gPredictedAltitude = (0.5*ROCKET_MASS*pow(gVelocityFiltered, 2))/(ROCKET_MASS*GRAVITY + 0.5*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT*pow(gVelocityFiltered,2)*ATS_MAX_SURFACE_AREA*adjustment);
     }
 
     // ATS window
