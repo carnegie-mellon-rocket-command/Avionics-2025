@@ -576,10 +576,6 @@ void setATSPosition(float percent_rot) {
  */
 void AdjustATS() {
     float targetAcceleration = abs(pow(gVelocityFiltered,2)/(2*(absolute_alt_target-gAltFiltered)));
-<<<<<<< Updated upstream
-=======
-    Serial.println("Target accel: " + String(targetAcceleration) + "\n");
->>>>>>> Stashed changes
      // Retract ATS fully after 18 seconds
     if (millis() - gLaunchTime > 18000) {
         setATSPosition(ATS_IN);
@@ -601,7 +597,7 @@ void AdjustATS() {
         if (error > 0){ //too slow
             adjustment = 0;
         } 
-        else { //too flast
+        else { //too fast
             adjustment = PIDFactor(abs(error), 0.03,0); // should normalize to 0 to 1
         }
         gAtsPosition = adjustment;
