@@ -23,7 +23,7 @@ Made by the 2025 Avionics team :D
 // ⚠⚠⚠ IMPORTANT⚠⚠⚠ 
 //true will NOT actually gather data, only simulate it for testing purposes  
 // false will gather data, FOR LAUNCH
-#define SIMULATE false
+#define SIMULATE true
 
 // Simulation mode libraries
 #if SIMULATE
@@ -228,7 +228,7 @@ void loop() {
         if (gAccelFiltered > ACCEL_THRESHOLD && !gLaunched) {
             // Write CSV header to the file
             WriteData("***************** START OF DATA ***************** TIME SINCE BOOT: " + String(millis()) + " ***************** TICK SPEED: " + String(LOOP_TARGET_MS) + "ms\n");
-            WriteData("time, pressure (hPa), altitude_raw (ft), acceleration_raw_x (ft/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, gAltFiltered (ft), gVelocityFiltered (ft/s), gAccelFiltered (ft/s^2), temperature (from IMU, degrees C), gAtsPosition (servo degrees)\n");
+            WriteData("time, pressure (hPa), altitude_raw (ft), acceleration_raw_x (ft/s^2), acceleration_raw_y, acceleration_raw_z, gyro_x (radians/s), gyro_y, gyro_z, gAltFiltered (ft), gVelocityFiltered (ft/s), gAccelFiltered (ft/s^2), temperature (from IMU, degrees C), gAtsPosition (servo degrees), gAltPredicted (ft)\n");
 
             if (DEBUG) {Serial.println("Rocket has launched!");}
             gLaunched = true;
@@ -602,6 +602,8 @@ void AdjustATS() {
         }
         gAtsPosition = adjustment;
         gPredictedAltitude = (0.5*ROCKET_MASS*pow(gVelocityFiltered, 2))/(ROCKET_MASS*GRAVITY + 0.5*ATMOSPHERE_FLUID_DENSITY*ROCKET_DRAG_COEFFICIENT*pow(gVelocityFiltered,2)*ATS_MAX_SURFACE_AREA*adjustment);
+        //debug
+        Serial.println("the predicted altitude: "+ String(gPredictedAltitude));
     }
 
     // ATS window
