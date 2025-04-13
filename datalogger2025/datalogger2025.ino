@@ -501,7 +501,7 @@ void FilterData(float alt, float acc) {
  * if the rocket has been reasonably still for 5 seconds, it is considered landed
 */
 bool DetectLanding() {
-    if (gLaunchTime != 0 && millis() - gLaunchTime > 60000) { return true; } 
+    if (gLaunchTime != 0 && millis() - gLaunchTime > 300000) { return true; } 
     return false;
 }
 
@@ -579,6 +579,7 @@ void AdjustATS() {
      // Retract ATS fully after 18 seconds
     if (millis() - gLaunchTime > 18000) {
         setATSPosition(ATS_IN);
+        gAtsPosition = ATS_IN;
         delay(10);
         return;
     }
