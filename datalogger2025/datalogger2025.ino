@@ -23,7 +23,7 @@ Made by the 2025 Avionics team :D
 // ⚠⚠⚠ IMPORTANT⚠⚠⚠ 
 //true will NOT actually gather data, only simulate it for testing purposes  
 // false will gather data, FOR LAUNCH
-#define SIMULATE true
+#define SIMULATE false
 
 // Simulation mode libraries
 #if SIMULATE
@@ -86,7 +86,7 @@ const int LOOP_TARGET_MS = 30;
 #endif
 
 // Acceleration threshold for launch detection (ft/s^2)
-const float ACCEL_THRESHOLD = 2*GRAVITY;
+const float ACCEL_THRESHOLD = 3*GRAVITY;
 // Velocity threshold for landing detection (ft/s)
 const float VELOCITY_THRESHOLD = 0.1f;
 
@@ -579,6 +579,7 @@ void AdjustATS() {
      // Retract ATS fully after 18 seconds
     if (millis() - gLaunchTime > 18000) {
         setATSPosition(ATS_IN);
+        delay(10);
         return;
     }
     
@@ -608,9 +609,20 @@ void AdjustATS() {
 
     // ATS window
     if (millis() - gLaunchTime > 4500) {
-        // Adjust ATS based on position
-        setATSPosition(gAtsPosition);
-        Serial.println("ATS position: " + String(gAtsPosition));
+        if (millis() - gLaunchTime < 6000) {
+          // Adjust ATS based on position
+          setATSPosition(ATS_IN);
+          delay(500);
+          setATSPosition(ATS_OUT);  // Initial position
+          delay(500);
+          setATSPosition(ATS_IN);  // Reset position
+          delay(500);
+          Serial.println("Cycling ATS position");
+        } else {
+        // Adjust ATS /based on position
+          setATSPosition(gAtsPosition);
+          Serial.println("ATS position: " + String(gAtsPosition));
+        }
     }
 }
 
